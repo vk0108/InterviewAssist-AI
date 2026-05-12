@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(printf 'using Microsoft.Agents.AI;\\\\nusing Microsoft.Agents.AI.Workflows;\\\\nusing Microsoft.Extensions.AI;\\\\nusing System.Collections.Generic;\\\\npublic class TypeTest { public static void Test\\(ChatClientAgent agent\\) { int x = agent.RunAsync\\(new List<ChatMessage>\\(\\), null, null, default\\); } }')"
+    ],
+    "additionalDirectories": [
+      "C:\\InterviewAssist Agentic AI\\Agents"
+    ]
+  }
+}

@@ -1,0 +1,473 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
+using Azure.AI.DocumentIntelligence;
+using Azure;
+using Azure.Identity;
+using Azure.AI.OpenAI;
+using Microsoft.Agents.AI.Workflows;
+using Microsoft.Extensions.AI;
+using Microsoft.Agents.AI;
+using DotNetEnv;
+
+Env.Load();
+
+var endpoint = Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT") ??
+    throw new InvalidOperationException("AZURE_OPENAI_ENDPOINT is not set.");
+var deploymentName = Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME") ?? "gpt-4o-mini";
+var client = new AzureOpenAIClient(new Uri(endpoint), new AzureCliCredential())
+    .GetChatClient(deploymentName)
+    .AsIChatClient();
+
+var docIntelEndpoint = Environment.GetEnvironmentVariable("DOCINTEL_ENDPOINT") ?? throw new InvalidOperationException("DOCINTEL_ENDPOINT is not set.");
+var docIntelKey = Environment.GetEnvironmentVariable("DOCINTEL_KEY") ?? throw new InvalidOperationException("DOCINTEL_KEY is not set.");
+var docIntelClient = new DocumentIntelligenceClient(new Uri(docIntelEndpoint), new AzureKeyCredential(docIntelKey));
+
+// Job description JSON is expected to be extracted from a file at runtime.
+var jobDescriptionJson = string.Empty;
+
+// Criteria set by admin to screen the resume. Can be set according to the hiring needs.
+Console.WriteLine("Set the criteria for screening (Strong Match / Partial Match) : ");
+var verdictCriteria = (Console.ReadLine() ?? "partial match").Trim();
+
+var jdFilePath = Environment.GetEnvironmentVariable("JD_FILE_PATH");
+if (!string.IsNullOrWhiteSpace(jdFilePath) && File.Exists(jdFilePath))
+{
+  try
+  {
+    jobDescriptionJson = await ExtractJdJsonAsync(docIntelClient, client, jdFilePath);
+    Console.WriteLine($"JD extracted from file: {jdFilePath}");
+  }
+  catch (Exception ex)
+  {
+    Console.WriteLine($"JD extraction failed: {ex.Message}. JD content will remain empty.");
+  }
+}
+else
+{
+  Console.WriteLine("No JD file provided; set JD_FILE_PATH to a valid path to extract the job description.");
+}
+
+var resumeJson = string.Empty;
+
+var resumeFilePath = Environment.GetEnvironmentVariable("RESUME_FILE_PATH");
+if (!string.IsNullOrWhiteSpace(resumeFilePath) && File.Exists(resumeFilePath))
+{
+  try
+  {
+    resumeJson = await ExtractResumeJsonAsync(docIntelClient, client, resumeFilePath);
+    Console.WriteLine($"Resume extracted from file: {resumeFilePath}");
+  }
+  catch (Exception ex)
+  {
+    Console.WriteLine($"Resume extraction failed: {ex.Message}. Resume content will remain empty.");
+  }
+}
+else
+{
+  Console.WriteLine("No resume file provided; set RESUME_FILE_PATH to a valid path to extract the resume.");
+}
+
+Console.WriteLine($"JD JSON: {jobDescriptionJson}"); 
+
+// Define specialized agents following Magentic One pattern
+
+// Screening Agent - Evaluates resume against job description
+ChatClientAgent screeningAgent = new(
+    client,
+    """
+    You are a resume screening specialist agent.
+    Your role: Analyze resume-JD fit and provide structured assessment.
+    
+    Inputs (order matters):
+      1) Job description JSON with keys: role_name, employment_type, experience, relevant_experience, primary_skills, secondary_skills, location.
+      2) Resume JSON with: Name, Education, Technical Skills, Experience, Work Experience, Projects, Certifications, Languages.
+    
+    Analysis framework:
+      - Normalize JD requirements (role, experience/min_years, skills, location)
+      - Map candidate profile to requirements with evidence
+      - Evaluate: role fit, years of experience, primary skills (must-have), secondary skills, projects, location
+      - Identify gaps and risks
+      
+    Scoring (0-100%):
+      - Heavy weight: primary skills, role alignment, relevant experience, minimum years, location
+      - Light weight: secondary skills, nice-to-haves
+      - Penalties: missing must-haves, conflicts
+    
+    Output format (exactly these two lines):
+      Match Score: NN% (brief rationale)
+      Verdict: Strong Match | Partial Match | No Match (1-2 sentence justification with evidence)
+    
+    Be specific; only use explicit resume information; state "No evidence found for X" when missing.
+    """,
+    "screening_agent",
+    "Screens resumes against job description");
+
+// Interviewer Agent - Conducts adaptive technical interviews
+ChatClientAgent interviewerAgent = new(
+    client,
+    """
+    You are a technical interviewer specialist agent.
+    Your role: Conduct adaptive interviews based on JD and candidate resume.
+    
+    Context: You receive JD and resume. Screening has already passed (Strong/Partial Match).
+    
+    Interview strategy:
+      - Ask ONE question at a time, wait for response
+      - Start with primary skills → secondary skills → experience depth
+      - Questions must be specific to candidate's stated experience and JD requirements
+      - Adaptive duration: 3-15 questions based on performance
+      - First-level interview: practical, hands-on, fundamentals-focused
+      
+    Rules:
+      - Never ask candidate to restate JD or resume (you already have them)
+      - No system design unless JD explicitly requires it
+      - Begin immediately with a primary-skill technical question
+      - Keep questions concise and specific
+    """,
+    "interviewer_agent",
+    "Conducts technical interviews");
+
+// Evaluator Agent - Scores candidate answers
+ChatClientAgent evaluatorAgent = new(
+    client,
+    """
+    You are an evaluation specialist agent.
+    Your role: Score candidate answers objectively and consistently.
+    
+    Inputs: JD, resume, interviewer's question, candidate's answer
+    
+    Scoring criteria (0-5 integer):
+      0-1: Incorrect, irrelevant, or fundamentally wrong
+      2: Partially correct but incomplete or vague
+      3: Correct but lacks depth or has minor errors
+      4: Good answer with clear understanding
+      5: Excellent, comprehensive, demonstrates mastery
+    
+    Consider:
+      - Correctness relative to question
+      - Completeness of answer
+      - Clarity of explanation
+      - Relevance to JD role/skills/level
+    
+    Impact: Your scores drive interview length
+      - < 2.5 average → early termination (3-5 questions)
+      - >= 3.5 average → extended interview (up to 15 questions)
+    
+    Output format (exactly one line): Score: N – brief rationale
+    """,
+    "evaluator_agent",
+    "Evaluates candidate answers");
+
+// Orchestrator Agent - Coordinates the entire interview workflow
+ChatClientAgent orchestratorAgent = new(
+    client,
+    """
+    You are the orchestrator agent managing the hiring interview workflow.
+    Your role: Coordinate specialized agents and make workflow decisions.
+    
+    Available agents:
+      1. screening_agent: Evaluates resume-JD match
+      2. interviewer_agent: Conducts technical interviews
+      3. evaluator_agent: Scores candidate answers
+    
+    Workflow:
+      Phase 1 - SCREENING:
+        - Delegate to screening_agent with JD and resume
+        - Parse verdict: Strong Match | Partial Match | No Match
+        - Decision: If No Match OR doesn't meet admin criteria → STOP
+        - Confirm with user before proceeding
+      
+      Phase 2 - INTERVIEW (if screening passed):
+        - Delegate to interviewer_agent for questions
+        - For each candidate answer:
+          * Delegate to evaluator_agent for scoring
+          * Track scores and calculate recent average (last 3)
+          * Adaptive termination:
+            - Minimum 3 questions before evaluation
+            - Exit early if recent avg < 2.5 (poor performance)
+            - Standard exit after 10 questions if avg < 3.5
+            - Continue up to 15 questions for strong performance (avg >= 3.5)
+        - Provide transparent feedback on why interview ended
+      
+      Phase 3 - FINAL RECOMMENDATION:
+        - Calculate overall average score
+        - Recommend: Proceed (>= 3.5) or Do Not Proceed (< 3.5)
+    
+    Communication style:
+      - Clear status updates at each phase
+      - Show agent delegation explicitly
+      - Provide reasoning for all decisions
+      - Display performance metrics transparently
+    """,
+    "orchestrator_agent",
+    "Orchestrates the hiring workflow");
+
+bool CriteriaAllowsStrong() => verdictCriteria.Equals("strong match", StringComparison.OrdinalIgnoreCase);
+bool CriteriaAllowsPartialOrStrong() => verdictCriteria.Equals("partial match", StringComparison.OrdinalIgnoreCase) || CriteriaAllowsStrong();
+
+// ============================================
+// PHASE 1: SCREENING
+// ============================================
+Console.WriteLine("\n=== PHASE 1: SCREENING ===");
+
+var screeningMessages = new List<ChatMessage>
+{
+  new(ChatRole.User, jobDescriptionJson),
+  new(ChatRole.User, resumeJson)
+};
+
+var screeningResult = await screeningAgent.RunAsync(screeningMessages, thread: null, options: null, cancellationToken: default);
+
+var screeningLastMessage = screeningResult.Messages?.LastOrDefault();
+string screeningText = screeningLastMessage?.GetType().GetProperty("Text")?.GetValue(screeningLastMessage) as string
+    ?? screeningLastMessage?.ToString()
+    ?? screeningResult.ToString();
+
+Console.WriteLine(screeningText);
+
+// Parse screening verdict
+var verdictLine = screeningText
+    .Split('\n')
+    .FirstOrDefault(l => l.TrimStart().StartsWith("Verdict", StringComparison.OrdinalIgnoreCase))
+    ?? screeningText;
+
+var verdictStrong = verdictLine.Contains("Strong Match", StringComparison.OrdinalIgnoreCase);
+var verdictPartial = verdictLine.Contains("Partial Match", StringComparison.OrdinalIgnoreCase);
+var verdictNo = verdictLine.Contains("No Match", StringComparison.OrdinalIgnoreCase);
+
+var passesCriteria = CriteriaAllowsStrong() ? verdictStrong : CriteriaAllowsPartialOrStrong() && (verdictStrong || verdictPartial);
+
+if (verdictNo || !passesCriteria)
+{
+  Console.WriteLine("\n[ORCHESTRATOR]: Interview not started - candidate did not pass screening per criteria.");
+  return;
+}
+
+Console.WriteLine("\n[ORCHESTRATOR]: Screening passed. Proceeding to interview phase.");
+Console.WriteLine("Do you want to proceed with the interview? (yes/no)");
+var proceedAnswer = Console.ReadLine();
+if (proceedAnswer?.ToLower() != "yes")
+{
+  Console.WriteLine("[ORCHESTRATOR]: Interview cancelled by user.");
+  return;
+}
+
+// ============================================
+// PHASE 2: ADAPTIVE INTERVIEW
+// ============================================
+Console.WriteLine("\n=== PHASE 2: ADAPTIVE INTERVIEW ===");
+
+var interviewThread = interviewerAgent.GetNewThread();
+
+// Initialize interview with context
+var interviewerMessages = new List<ChatMessage>
+{
+  new(ChatRole.User, "Start the technical interview. Ask exactly one question at a time based on the JD and resume. Begin with a primary-skill question. The interview is adaptive (3-15 questions based on performance)."),
+  new(ChatRole.User, jobDescriptionJson),
+  new(ChatRole.User, resumeJson)
+};
+
+var interviewResult = await interviewerAgent.RunAsync(interviewerMessages, thread: interviewThread, options: null, cancellationToken: default);
+var interviewLast = interviewResult.Messages?.LastOrDefault();
+var firstQuestion = interviewLast?.GetType().GetProperty("Text")?.GetValue(interviewLast) as string
+    ?? interviewLast?.ToString()
+    ?? interviewResult.ToString();
+
+Console.WriteLine($"\n[INTERVIEWER]: {firstQuestion}");
+
+// Interview loop with adaptive termination
+var scores = new List<int>();
+var currentQuestion = firstQuestion;
+const int minQuestions = 3;
+const int maxQuestions = 15;
+const double poorPerformanceThreshold = 2.5;
+const double goodPerformanceThreshold = 3.5;
+const int recentWindowSize = 3;
+
+for (int i = 0; i < maxQuestions; i++)
+{
+  Console.WriteLine();
+  Console.Write("Candidate: ");
+  var answer = Console.ReadLine();
+  
+  if (string.IsNullOrWhiteSpace(answer))
+  {
+    Console.WriteLine("\n[ORCHESTRATOR]: Interview ended by user.");
+    break;
+  }
+
+  // Delegate to evaluator agent
+  var evalMessages = new List<ChatMessage>
+  {
+    new(ChatRole.User, jobDescriptionJson),
+    new(ChatRole.User, resumeJson),
+    new(ChatRole.User, $"Question: {currentQuestion}"),
+    new(ChatRole.User, $"Answer: {answer}")
+  };
+
+  var evalResult = await evaluatorAgent.RunAsync(evalMessages, thread: null, options: null, cancellationToken: default);
+  var evalLast = evalResult.Messages?.LastOrDefault();
+  var evalText = evalLast?.GetType().GetProperty("Text")?.GetValue(evalLast) as string
+      ?? evalLast?.ToString()
+      ?? evalResult.ToString();
+
+  Console.WriteLine($"[EVALUATOR]: {evalText}");
+
+  // Parse and store score
+  var match = Regex.Match(evalText ?? string.Empty, @"Score:\s*(?<score>[0-5])");
+  if (match.Success && int.TryParse(match.Groups["score"].Value, out var scoreValue))
+  {
+    scores.Add(scoreValue);
+  }
+
+  // Adaptive termination logic
+  if (scores.Count >= minQuestions)
+  {
+    var recentScores = scores.Skip(Math.Max(0, scores.Count - recentWindowSize)).ToList();
+    var recentAverage = recentScores.Average();
+
+    // Early exit for poor performance
+    if (recentAverage < poorPerformanceThreshold)
+    {
+      Console.WriteLine($"\n[ORCHESTRATOR]: Interview ended early due to poor performance. Recent average: {recentAverage:F2}/5");
+      break;
+    }
+
+    // Standard exit after 10 questions if not performing well
+    if (scores.Count >= 10 && recentAverage < goodPerformanceThreshold)
+    {
+      Console.WriteLine($"\n[ORCHESTRATOR]: Interview concluded after {scores.Count} questions. Performance plateau detected.");
+      break;
+    }
+  }
+
+  // Check max questions limit
+  if (i == maxQuestions - 1)
+  {
+    Console.WriteLine($"\n[ORCHESTRATOR]: Maximum question limit of {maxQuestions} reached.");
+    break;
+  }
+
+  // Get next question from interviewer
+  var followUpMessages = new List<ChatMessage>
+  {
+    new(ChatRole.User, answer)
+  };
+
+  var followUpResult = await interviewerAgent.RunAsync(followUpMessages, thread: interviewThread, options: null, cancellationToken: default);
+  var followUpLast = followUpResult.Messages?.LastOrDefault();
+  var nextQuestion = followUpLast?.GetType().GetProperty("Text")?.GetValue(followUpLast) as string
+      ?? followUpLast?.ToString()
+      ?? followUpResult.ToString();
+
+  Console.WriteLine($"\n[INTERVIEWER]: {nextQuestion}");
+  currentQuestion = nextQuestion;
+}
+
+// ============================================
+// PHASE 3: FINAL RECOMMENDATION
+// ============================================
+Console.WriteLine("\n=== PHASE 3: FINAL RECOMMENDATION ===");
+
+if (scores.Count > 0)
+{
+  var average = scores.Average();
+  Console.WriteLine($"[ORCHESTRATOR]: Average Score: {average:F2} / 5 across {scores.Count} questions.");
+  
+  var proceed = average >= 3.5;
+  var recommendation = proceed
+    ? "PROCEED with the candidate - Strong interview performance demonstrates required competencies."
+    : "DO NOT PROCEED - Interview performance below threshold. Consider other candidates.";
+    
+  Console.WriteLine($"[ORCHESTRATOR]: Final Recommendation: {recommendation}");
+}
+else
+{
+  Console.WriteLine("[ORCHESTRATOR]: No scores recorded; interview incomplete.");
+}
+
+Console.WriteLine("\n=== WORKFLOW COMPLETE ===");
+
+static string DetectContentType(string path)
+{
+  var ext = Path.GetExtension(path).ToLowerInvariant();
+  return ext switch
+  {
+    ".pdf" => "application/pdf",
+    ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".doc" => "application/msword",
+    _ => "application/octet-stream"
+  };
+}
+
+static async Task<string> ExtractJdJsonAsync(DocumentIntelligenceClient docClient, IChatClient chatClient, string filePath)
+{
+  var bytes = await File.ReadAllBytesAsync(filePath);
+
+  var op = await docClient.AnalyzeDocumentAsync(
+      WaitUntil.Completed,
+      "prebuilt-layout",
+      BinaryData.FromBytes(bytes));
+
+  var result = op.Value;
+  var text = string.Join("\n", result.Paragraphs.Select(p => p.Content));
+
+  var messages = new List<ChatMessage>
+  {
+    new(ChatRole.System,
+        "Extract the following job description into JSON with keys: role_name, employment_type, experience, relevant_experience, primary_skills, secondary_skills, location. Rules: (1) primary_skills must only contain the core technologies explicitly tied to the 'What are we looking for' statement (e.g., Web Application and Web API development using .NET Core) and the directly associated stack (.NET Core, C# 6 or above, .NET Core MVC, .NET Core Web API, Entity Framework Core). (2) Everything else goes into secondary_skills. (3) Return JSON only."),
+    new(ChatRole.User, text)
+  };
+
+  var resp = await chatClient.GetResponseAsync(messages);
+  var respMsg = resp.Messages?.LastOrDefault();
+  var jdJson = respMsg?.GetType().GetProperty("Text")?.GetValue(respMsg) as string
+      ?? respMsg?.ToString()
+      ?? resp.ToString();
+
+  return jdJson;
+}
+
+static async Task<string> ExtractResumeJsonAsync(DocumentIntelligenceClient docClient, IChatClient chatClient, string filePath)
+{
+  var bytes = await File.ReadAllBytesAsync(filePath);
+
+  var op = await docClient.AnalyzeDocumentAsync(
+      WaitUntil.Completed,
+      "prebuilt-layout",
+      BinaryData.FromBytes(bytes));
+
+  var result = op.Value;
+  var text = string.Join("\n", result.Paragraphs.Select(p => p.Content));
+
+  var messages = new List<ChatMessage>
+  {
+    new(ChatRole.System,
+        "Extract the following resume into JSON with keys: Name, Education, Technical Skills, Experience in years, Work Experience, Projects, Certifications, Languages. Return JSON only."),
+    new(ChatRole.User, text)
+  };
+
+  var resp = await chatClient.GetResponseAsync(messages);
+  var respMsg = resp.Messages?.LastOrDefault();
+  var resumeJson = respMsg?.GetType().GetProperty("Text")?.GetValue(respMsg) as string
+      ?? respMsg?.ToString()
+      ?? resp.ToString();
+
+  return resumeJson;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+

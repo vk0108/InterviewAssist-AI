@@ -1,0 +1,15 @@
+﻿using System.Threading.Tasks;
+using QuestPDF.Infrastructure;
+
+public class Program
+{
+    public static async Task Main()
+    {
+        QuestPDF.Settings.License = LicenseType.Community;
+
+        var config = EnvironmentConfig.Build();
+        var agents = AgentFactory.Create(config.ChatClient);
+        var workflow = new InterviewWorkflow(config, agents);
+        await workflow.RunAsync();
+    }
+}

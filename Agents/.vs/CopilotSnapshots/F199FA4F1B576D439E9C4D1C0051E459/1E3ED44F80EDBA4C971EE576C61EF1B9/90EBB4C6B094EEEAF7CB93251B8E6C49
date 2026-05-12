@@ -1,0 +1,62 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using Azure;
+using Azure.AI.TextAnalytics;
+using Microsoft.Extensions.AI;
+
+
+public sealed class AzureLanguageService
+{
+    private readonly TextAnalyticsClient _client;
+
+    public async Task<string> SummarizeAsync(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return string.Empty;
+        }
+
+        var batchInput = new List<string> { text };
+        var actions = new TextAnalyticsActions
+        {
+            ExtractSummaryActions = new List<ExtractSummaryAction> { new ExtractSummaryAction() }
+        };
+
+        var operation = await _client.StartAnalyzeActionsAsync(batchInput, actions);
+        await operation.WaitForCompletionAsync();
+
+        var summaryLines = new List<string>();
+        await foreach (var page in operation.Value)
+        {
+            foreach (var summaryResult in page.ExtractSummaryResults)
+            {
+                foreach (var doc in summaryResult.DocumentsResults)
+                {
+                    if (doc.HasError) continue;
+                    foreach (var sentence in doc.Sentences)
+                    {
+                        summaryLines.Add(sentence.Text.Trim());
+                    }
+                }
+            }
+        }
+
+        return string.Join(" ", summaryLines);
+    }
+
+    public async Task<bool> CheckConnectionAsync()
+    {
+        try
+        {
+            var response = await _client.DetectLanguageAsync("Hello world");
+            Console.WriteLine($"Language service check succeeded. Detected: {response.Value.Name} ({response.Value.Iso6391Name})");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Language service check failed: {ex.Message}");
+            return false;
+        }
+    }
+}

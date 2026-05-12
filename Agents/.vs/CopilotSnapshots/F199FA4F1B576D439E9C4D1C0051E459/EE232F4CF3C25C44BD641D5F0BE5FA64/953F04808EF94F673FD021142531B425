@@ -1,0 +1,101 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Text.Json;
+using System.Threading.Tasks;
+using Azure;
+using Azure.AI.Language.Conversations;
+using Azure.Core;
+
+public sealed class ConversationSummarizer
+{
+    private readonly ConversationAnalysisClient _client;
+
+    public ConversationSummarizer(EnvironmentConfig config)
+        : this(config.LanguageEndpoint, config.LanguageKey)
+    {
+    }
+
+    public ConversationSummarizer(string endpoint, string key)
+    {
+        if (string.IsNullOrWhiteSpace(endpoint)) throw new ArgumentNullException(nameof(endpoint));
+        if (string.IsNullOrWhiteSpace(key)) throw new ArgumentNullException(nameof(key));
+        var normalizedEndpoint = endpoint.TrimEnd('/');
+        _client = new ConversationAnalysisClient(new Uri(normalizedEndpoint), new AzureKeyCredential(key));
+    }
+
+    public async Task<string> SummarizeAsync(IReadOnlyList<ConversationItem> items)
+    {
+        if (items.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var data = new
+        {
+            kind = "Conversation",
+            analysisInput = new
+            {
+                conversations = new[]
+                {
+                    new
+                    {
+                        conversationItems = items,
+                        id = "1",
+                        language = "en",
+                        modality = "text"
+                    }
+                }
+            },
+            tasks = new[]
+            {
+                new
+                {
+                    taskName = "Summary",
+                    kind = "ConversationalSummarizationTask",
+                    parameters = new
+                    {
+                        summaryAspects = new[] { "issue", "resolution" }
+                    }
+                }
+            }
+        };
+
+        Response response = await _client.AnalyzeConversationAsync(RequestContent.Create(data));
+        using var result = JsonDocument.Parse(response.ContentStream);
+        var root = result.RootElement;
+        var summaries = new List<string>();
+
+        if (root.TryGetProperty("tasks", out var tasks) &&
+            tasks.TryGetProperty("items", out var itemsArray))
+        {
+            foreach (var task in itemsArray.EnumerateArray())
+            {
+                if (!task.TryGetProperty("results", out var results)) continue;
+                if (!results.TryGetProperty("conversations", out var conversations)) continue;
+                foreach (var conv in conversations.EnumerateArray())
+                {
+                    if (!conv.TryGetProperty("summaries", out var convSummaries)) continue;
+                    foreach (var summary in convSummaries.EnumerateArray())
+                    {
+                        if (summary.TryGetProperty("text", out var text))
+                        {
+                            summaries.Add(text.GetString() ?? string.Empty);
+                        }
+                    }
+                }
+            }
+        }
+
+        return string.Join(" \n", summaries);
+    }
+}
+
+public sealed class ConversationItem
+{
+    public string text { get; set; } = string.Empty;
+    public string id { get; set; } = string.Empty;
+    public string role { get; set; } = string.Empty; // "Agent" or "Customer"
+    public string participantId { get; set; } = string.Empty;
+    public string language { get; set; } = "en";
+    public string modality { get; set; } = "text";
+}

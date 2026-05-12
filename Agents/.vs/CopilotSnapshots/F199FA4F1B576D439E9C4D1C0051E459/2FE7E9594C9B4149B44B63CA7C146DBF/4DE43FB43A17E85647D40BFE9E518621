@@ -1,0 +1,134 @@
+﻿using System;
+using System.Collections.Generic;
+using QuestPDF.Fluent;
+using QuestPDF.Helpers;
+using QuestPDF.Infrastructure;
+
+public sealed class ReportData
+{
+    public string CandidateName { get; set; } = "Candidate";
+    public string QuickRecap { get; set; } = string.Empty;
+    public double TechnicalRating { get; set; }
+        = 0; // out of 5
+    public Dictionary<string, (string Summary, double Rating)> TechnicalSkills { get; set; }
+        = new();
+    public SoftSkillsRatings SoftSkills { get; set; } = new();
+    public string SummaryOfDiscussion { get; set; } = string.Empty;
+    public string InterviewerComments { get; set; } = string.Empty;
+}
+
+public sealed class SoftSkillsRatings
+{
+    public (string Summary, double Rating) EnglishCommunication { get; set; }
+        = (string.Empty, 0);
+    public (string Summary, double Rating) Attitude { get; set; }
+        = (string.Empty, 0);
+    public (string Summary, double Rating) Interpersonal { get; set; }
+        = (string.Empty, 0);
+}
+
+public sealed class ReportGenerator
+{
+    private readonly AzureLanguageService _language;
+
+    public ReportGenerator(AzureLanguageService language)
+    {
+        _language = language;
+    }
+
+    public async Task<ReportData> BuildReportDataAsync(
+        string candidateName,
+        IEnumerable<int> scores,
+        IEnumerable<string> exchangeHistory,
+        string finalManagerText)
+    {
+        var historyText = string.Join("\n---\n", exchangeHistory);
+        var quickRecap = await _language.SummarizeAsync(historyText);
+        var discussionSummary = await _language.SummarizeAsync(historyText);
+
+        var scoreList = new List<int>(scores);
+        var technicalRating = scoreList.Count > 0 ? Math.Clamp(scoreList.Average(), 0, 5) : 0;
+
+        var softSkillRating = technicalRating; // fallback; adjust if you have separate signals
+
+        var data = new ReportData
+        {
+            CandidateName = string.IsNullOrWhiteSpace(candidateName) ? "Candidate" : candidateName,
+            QuickRecap = quickRecap,
+            TechnicalRating = technicalRating,
+            TechnicalSkills = new Dictionary<string, (string Summary, double Rating)>
+            {
+                { "Overall Technical", (discussionSummary, technicalRating) }
+            },
+            SoftSkills = new SoftSkillsRatings
+            {
+                EnglishCommunication = ("Communication observed during the interview.", softSkillRating),
+                Attitude = ("Attitude inferred from responses and collaboration.", softSkillRating),
+                Interpersonal = ("Team interaction and collaboration indications.", softSkillRating)
+            },
+            SummaryOfDiscussion = discussionSummary,
+            InterviewerComments = string.IsNullOrWhiteSpace(finalManagerText) ? "" : finalManagerText
+        };
+
+        return data;
+    }
+
+    public void GeneratePdf(string outputPath, ReportData data)
+    {
+        Document.Create(container =>
+        {
+            container.Page(page =>
+            {
+                page.Size(PageSizes.A4);
+                page.Margin(30);
+                page.DefaultTextStyle(TextStyle.Default.FontSize(11));
+
+                page.Header().Text($"Interview Report - {data.CandidateName}").SemiBold().FontSize(18);
+
+                page.Content().PaddingVertical(10).Column(col =>
+                {
+                    col.Spacing(10);
+
+                    col.Item().Element(e => Section(e, "Quick Recap of Interview", data.QuickRecap));
+
+                    col.Item().Border(1).BorderColor(Colors.Grey.Lighten2).Padding(8).Column(c =>
+                    {
+                        c.Spacing(6);
+                        c.Item().Text("Technical Training").SemiBold().FontSize(14);
+                        c.Item().Text($"Overall Rating: {data.TechnicalRating:F1} / 5");
+                        foreach (var kvp in data.TechnicalSkills)
+                        {
+                            c.Item().Text($"{kvp.Key} (Rating: {kvp.Value.Rating:F1}/5)").SemiBold();
+                            c.Item().Text(kvp.Value.Summary);
+                        }
+                    });
+
+                    col.Item().Border(1).BorderColor(Colors.Grey.Lighten2).Padding(8).Column(c =>
+                    {
+                        c.Spacing(6);
+                        c.Item().Text("Soft Skills").SemiBold().FontSize(14);
+                        c.Item().Text($"English Communication: {data.SoftSkills.EnglishCommunication.Rating:F1}/5");
+                        c.Item().Text(data.SoftSkills.EnglishCommunication.Summary);
+                        c.Item().Text($"Attitude: {data.SoftSkills.Attitude.Rating:F1}/5");
+                        c.Item().Text(data.SoftSkills.Attitude.Summary);
+                        c.Item().Text($"Interpersonal Skill Communication: {data.SoftSkills.Interpersonal.Rating:F1}/5");
+                        c.Item().Text(data.SoftSkills.Interpersonal.Summary);
+                    });
+
+                    col.Item().Element(e => Section(e, "Summary of Discussion", data.SummaryOfDiscussion));
+                    col.Item().Element(e => Section(e, "Interviewer Comments", data.InterviewerComments));
+                });
+            });
+        }).GeneratePdf(outputPath);
+    }
+
+    private static void Section(IContainer container, string title, string body)
+    {
+        container.Border(1).BorderColor(Colors.Grey.Lighten2).Padding(8).Column(c =>
+        {
+            c.Spacing(6);
+            c.Item().Text(title).SemiBold().FontSize(14);
+            c.Item().Text(string.IsNullOrWhiteSpace(body) ? "Not provided." : body);
+        });
+    }
+}

@@ -1,0 +1,67 @@
+﻿using DotNetEnv;
+using Microsoft.CognitiveServices.Speech;
+using Microsoft.CognitiveServices.Speech.Audio;
+using System;
+using System.Threading.Tasks;
+
+public static class SpeechToText
+{
+    static SpeechToText()
+    {
+        try { Env.Load(); } catch { /* ignore */ }
+    }
+
+    private static readonly string? _speechKey = Environment.GetEnvironmentVariable("SPEECH_KEY");
+    private static readonly string? _speechEndpoint = Environment.GetEnvironmentVariable("SPEECH_TO_TEXT_ENDPOINT") ?? Environment.GetEnvironmentVariable("ENDPOINT");
+    private static readonly string? _speechRegion = Environment.GetEnvironmentVariable("SPEECH_REGION");
+
+    public static async Task<string?> ListenOnceAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_speechKey) || (string.IsNullOrWhiteSpace(_speechEndpoint) && string.IsNullOrWhiteSpace(_speechRegion)))
+        {
+            Console.WriteLine("[STT] Skipped: SPEECH_KEY plus SPEECH_TO_TEXT_ENDPOINT/SPEECH_REGION not set.");
+            return null;
+        }
+
+        try
+        {
+            SpeechConfig speechConfig;
+            if (!string.IsNullOrWhiteSpace(_speechRegion))
+            {
+                Console.WriteLine($"[STT] Using region={_speechRegion}");
+                speechConfig = SpeechConfig.FromSubscription(_speechKey!, _speechRegion);
+            }
+            else
+            {
+                Console.WriteLine($"[STT] Using endpoint={_speechEndpoint}");
+                speechConfig = SpeechConfig.FromEndpoint(new Uri(_speechEndpoint!), _speechKey);
+            }
+
+            using var audioConfig = AudioConfig.FromDefaultMicrophoneInput();
+            using var recognizer = new SpeechRecognizer(speechConfig, audioConfig);
+
+            Console.WriteLine("[STT] Speak your answer now...");
+            var result = await recognizer.RecognizeOnceAsync();
+            switch (result.Reason)
+            {
+                case ResultReason.RecognizedSpeech:
+                    Console.WriteLine($"[STT] Recognized: {result.Text}");
+                    return result.Text;
+                case ResultReason.NoMatch:
+                    Console.WriteLine("[STT] No speech could be recognized.");
+                    return null;
+                case ResultReason.Canceled:
+                    var cancel = CancellationDetails.FromResult(result);
+                    Console.WriteLine($"[STT] Canceled: {cancel.Reason}; ErrorDetails={cancel.ErrorDetails}");
+                    return null;
+                default:
+                    return null;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[STT] Error: {ex.Message}");
+            return null;
+        }
+    }
+}

@@ -1,0 +1,472 @@
+﻿#pragma warning disable SKEXP0110 // Semantic Kernel experimental features
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
+using Azure.AI.DocumentIntelligence;
+using Azure;
+using Azure.Identity;
+using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.Agents;
+using Microsoft.SemanticKernel.Agents.Chat;
+using Microsoft.SemanticKernel.ChatCompletion;
+using DotNetEnv;
+
+Env.Load();
+
+var endpoint = Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT") ??
+    throw new InvalidOperationException("AZURE_OPENAI_ENDPOINT is not set.");
+var deploymentName = Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME") ?? "gpt-4o-mini";
+
+var docIntelEndpoint = Environment.GetEnvironmentVariable("DOCINTEL_ENDPOINT") ?? throw new InvalidOperationException("DOCINTEL_ENDPOINT is not set.");
+var docIntelKey = Environment.GetEnvironmentVariable("DOCINTEL_KEY") ?? throw new InvalidOperationException("DOCINTEL_KEY is not set.");
+var docIntelClient = new DocumentIntelligenceClient(new Uri(docIntelEndpoint), new AzureKeyCredential(docIntelKey));
+
+// Build Semantic Kernel with Azure OpenAI
+var kernelBuilder = Kernel.CreateBuilder();
+kernelBuilder.AddAzureOpenAIChatCompletion(
+    deploymentName: deploymentName,
+    endpoint: endpoint,
+    credentials: new AzureCliCredential());
+
+var kernel = kernelBuilder.Build();
+
+// Job description JSON is expected to be extracted from a file at runtime.
+var jobDescriptionJson = string.Empty;
+
+// Criteria set by admin to screen the resume. Can be set according to the hiring needs.
+Console.WriteLine("Set the criteria for screening (Strong Match / Partial Match) : ");
+var verdictCriteria = (Console.ReadLine() ?? "partial match").Trim();
+
+var jdFilePath = Environment.GetEnvironmentVariable("JD_FILE_PATH");
+if (!string.IsNullOrWhiteSpace(jdFilePath) && File.Exists(jdFilePath))
+{
+  try
+  {
+    jobDescriptionJson = await ExtractJdJsonAsync(docIntelClient, kernel, jdFilePath);
+    Console.WriteLine($"JD extracted from file: {jdFilePath}");
+  }
+  catch (Exception ex)
+  {
+    Console.WriteLine($"JD extraction failed: {ex.Message}. JD content will remain empty.");
+  }
+}
+else
+{
+  Console.WriteLine("No JD file provided; set JD_FILE_PATH to a valid path to extract the job description.");
+}
+
+var resumeJson = string.Empty;
+
+var resumeFilePath = Environment.GetEnvironmentVariable("RESUME_FILE_PATH");
+if (!string.IsNullOrWhiteSpace(resumeFilePath) && File.Exists(resumeFilePath))
+{
+  try
+  {
+    resumeJson = await ExtractResumeJsonAsync(docIntelClient, kernel, resumeFilePath);
+    Console.WriteLine($"Resume extracted from file: {resumeFilePath}");
+  }
+  catch (Exception ex)
+  {
+    Console.WriteLine($"Resume extraction failed: {ex.Message}. Resume content will remain empty.");
+  }
+}
+else
+{
+  Console.WriteLine("No resume file provided; set RESUME_FILE_PATH to a valid path to extract the resume.");
+}
+
+Console.WriteLine($"JD JSON: {jobDescriptionJson}"); 
+
+// Define specialized agents using Semantic Kernel Agent Framework
+
+// Screening Agent - Evaluates resume against job description
+ChatCompletionAgent screeningAgent = new()
+{
+    Name = "ScreeningAgent",
+    Instructions = """
+    You are a resume screening specialist agent.
+    Your role: Analyze resume-JD fit and provide structured assessment.
+    
+    When invoked, you will receive:
+      1) Job description JSON with keys: role_name, employment_type, experience, relevant_experience, primary_skills, secondary_skills, location.
+      2) Resume JSON with: Name, Education, Technical Skills, Experience, Work Experience, Projects, Certifications, Languages.
+    
+    Analysis framework:
+      - Normalize JD requirements (role, experience/min_years, skills, location)
+      - Map candidate profile to requirements with evidence
+      - Evaluate: role fit, years of experience, primary skills (must-have), secondary skills, projects, location
+      - Identify gaps and risks
+      
+    Scoring (0-100%):
+      - Heavy weight: primary skills, role alignment, relevant experience, minimum years, location
+      - Light weight: secondary skills, nice-to-haves
+      - Penalties: missing must-haves, conflicts
+    
+    Output format (exactly these two lines):
+      Match Score: NN% (brief rationale)
+      Verdict: Strong Match | Partial Match | No Match (1-2 sentence justification with evidence)
+    
+    Be specific; only use explicit resume information; state "No evidence found for X" when missing.
+    """,
+    Kernel = kernel,
+    Arguments = new KernelArguments()
+};
+
+// Interviewer Agent - Conducts adaptive technical interviews
+ChatCompletionAgent interviewerAgent = new()
+{
+    Name = "InterviewerAgent",
+    Instructions = """
+    You are a technical interviewer specialist agent.
+    Your role: Conduct adaptive interviews based on JD and candidate resume.
+    
+    Context: Screening has already passed (Strong/Partial Match). You have access to JD and resume in chat history.
+    
+    Interview strategy:
+      - Ask ONE question at a time, wait for response
+      - Start with primary skills → secondary skills → experience depth
+      - Questions must be specific to candidate's stated experience and JD requirements
+      - Adaptive duration: 3-15 questions based on performance
+      - First-level interview: practical, hands-on, fundamentals-focused
+      
+    Rules:
+      - Never ask candidate to restate JD or resume (you already have them in context)
+      - No system design unless JD explicitly requires it
+      - When first invoked, begin immediately with a primary-skill technical question
+      - When invoked with a candidate answer, acknowledge briefly and ask the next question
+      - Keep questions concise and specific
+    """,
+    Kernel = kernel,
+    Arguments = new KernelArguments()
+};
+
+// Evaluator Agent - Scores candidate answers
+ChatCompletionAgent evaluatorAgent = new()
+{
+    Name = "EvaluatorAgent",
+    Instructions = """
+    You are an evaluation specialist agent.
+    Your role: Score candidate answers objectively and consistently.
+    
+    When invoked, you will receive: JD, resume, interviewer's question, and candidate's answer from chat history.
+    
+    Scoring criteria (0-5 integer):
+      0-1: Incorrect, irrelevant, or fundamentally wrong
+      2: Partially correct but incomplete or vague
+      3: Correct but lacks depth or has minor errors
+      4: Good answer with clear understanding
+      5: Excellent, comprehensive, demonstrates mastery
+    
+    Consider:
+      - Correctness relative to question
+      - Completeness of answer
+      - Clarity of explanation
+      - Relevance to JD role/skills/level
+    
+    Impact: Your scores drive interview length
+      - < 2.5 average → early termination (3-5 questions)
+      - >= 3.5 average → extended interview (up to 15 questions)
+    
+    Output format (exactly one line): Score: N – brief rationale
+    """,
+    Kernel = kernel,
+    Arguments = new KernelArguments()
+};
+
+// Orchestrator Agent - Coordinates the entire interview workflow using Magentic One pattern
+ChatCompletionAgent orchestratorAgent = new()
+{
+    Name = "Orchestrator",
+    Instructions = $"""
+    You are the Magentic One orchestrator managing the hiring interview workflow.
+    Your role: Autonomously coordinate specialized agents and make workflow decisions.
+    
+    Admin Criteria: {verdictCriteria}
+    
+    Available Agents:
+      - ScreeningAgent: Evaluates resume-JD match, returns Match Score and Verdict
+      - InterviewerAgent: Asks technical questions one at a time
+      - EvaluatorAgent: Scores candidate answers (0-5)
+    
+    Workflow Phases:
+    
+    PHASE 1 - SCREENING:
+      1. Delegate to ScreeningAgent with JD and Resume
+      2. Parse verdict from response (Strong Match | Partial Match | No Match)
+      3. Decision:
+         - If "No Match" → STOP workflow, explain to user
+         - If verdict doesn't meet admin criteria (Strong Match required but got Partial) → STOP
+         - If passed → Ask user "Do you want to proceed with the interview? (yes/no)"
+         - If user says no → STOP
+         - If user says yes → Proceed to PHASE 2
+    
+    PHASE 2 - ADAPTIVE INTERVIEW:
+      1. Delegate to InterviewerAgent to start interview with JD and Resume context
+      2. Display question to user and wait for candidate answer
+      3. For each candidate answer:
+         a. Delegate to EvaluatorAgent with question and answer
+         b. Parse score from response (0-5)
+         c. Track scores and calculate recent average (last 3)
+         d. Adaptive termination logic:
+            - Minimum 3 questions before considering early exit
+            - If recent average < 2.5 after 3+ questions → END interview (poor performance)
+            - If 10+ questions and recent average < 3.5 → END interview (plateau)
+            - If 15 questions reached → END interview (max limit)
+         e. If continuing, delegate to InterviewerAgent with candidate answer for next question
+      4. Repeat until termination condition met or user provides empty answer
+    
+    PHASE 3 - FINAL RECOMMENDATION:
+      1. Calculate overall average score across all questions
+      2. Recommendation:
+         - Average >= 3.5 → PROCEED with candidate
+         - Average < 3.5 → DO NOT PROCEED with candidate
+      3. Display: average score, number of questions, and final recommendation
+    
+    Communication Style:
+      - Prefix all your messages with [ORCHESTRATOR]:
+      - When delegating, say: "[ORCHESTRATOR]: Delegating to [AgentName]..."
+      - Show clear phase transitions
+      - Explain all decisions with brief reasoning
+      - Display metrics transparently
+      - Ask user for input when needed (proceed with interview, candidate answers)
+    
+    Termination Signals:
+      - When you output "[WORKFLOW_COMPLETE]", the system will stop
+      - Only output this after final recommendation is displayed
+    
+    Important:
+      - You must actively coordinate agents - don't expect user to manage workflow
+      - Make autonomous decisions based on agent responses
+      - Track interview state (scores, question count, phase)
+      - Enforce adaptive termination rules
+    """,
+    Kernel = kernel,
+    Arguments = new KernelArguments()
+};
+
+// ============================================
+// MAGENTIC ONE ORCHESTRATION LOOP
+// ============================================
+
+Console.WriteLine("\n=== MAGENTIC ONE ORCHESTRATION STARTED ===\n");
+
+// Create the agent group chat with all agents
+AgentGroupChat orchestrationChat = new(orchestratorAgent, screeningAgent, interviewerAgent, evaluatorAgent)
+{
+    ExecutionSettings = new AgentGroupChatSettings
+    {
+        SelectionStrategy = new SequentialSelectionStrategy(),
+        TerminationStrategy = new KeywordTerminationStrategy("[WORKFLOW_COMPLETE]", "[EXIT]")
+        {
+            AutomaticReset = false,
+            MaximumIterations = 100
+        }
+    }
+};
+
+// Seed the conversation with the task
+orchestrationChat.AddChatMessage(new ChatMessageContent(AuthorRole.User, 
+    $"""
+    Begin the hiring interview workflow.
+    
+    Admin Criteria: {verdictCriteria}
+    
+    Job Description JSON:
+    {jobDescriptionJson}
+    
+    Resume JSON:
+    {resumeJson}
+    
+    Start with PHASE 1: SCREENING.
+    """));
+
+// Magentic orchestration loop
+var isWorkflowComplete = false;
+var interviewQuestionCount = 0;
+var scores = new List<int>();
+var currentPhase = "SCREENING";
+var waitingForUserInput = false;
+var userInputType = "";
+
+await foreach (var message in orchestrationChat.InvokeAsync())
+{
+    var agentName = message.AuthorName ?? "Unknown";
+    var content = message.Content ?? string.Empty;
+    
+    Console.WriteLine($"[{agentName}]: {content}");
+    Console.WriteLine();
+    
+    // Parse orchestrator decisions and inject user input when needed
+    if (agentName == "Orchestrator")
+    {
+        // Check if workflow is complete
+        if (content.Contains("[WORKFLOW_COMPLETE]") || content.Contains("[EXIT]"))
+        {
+            isWorkflowComplete = true;
+            break;
+        }
+        
+        // Check if orchestrator is asking for user input
+        if (content.Contains("Do you want to proceed with the interview?", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.Write("User: ");
+            var userResponse = Console.ReadLine() ?? "no";
+            orchestrationChat.AddChatMessage(new ChatMessageContent(AuthorRole.User, 
+                $"User response: {userResponse}"));
+            currentPhase = userResponse.Trim().Equals("yes", StringComparison.OrdinalIgnoreCase) ? "INTERVIEW" : "STOPPED";
+        }
+        
+        // Check if screening failed
+        if (content.Contains("did not pass screening", StringComparison.OrdinalIgnoreCase) ||
+            content.Contains("STOP", StringComparison.OrdinalIgnoreCase))
+        {
+            break;
+        }
+    }
+    
+    // Handle interviewer questions
+    if (agentName == "InterviewerAgent" && currentPhase == "INTERVIEW")
+    {
+        // This is a question for the candidate
+        Console.Write("Candidate: ");
+        var candidateAnswer = Console.ReadLine();
+        
+        if (string.IsNullOrWhiteSpace(candidateAnswer))
+        {
+            orchestrationChat.AddChatMessage(new ChatMessageContent(AuthorRole.User, 
+                "Candidate ended the interview."));
+            currentPhase = "FINAL";
+        }
+        else
+        {
+            interviewQuestionCount++;
+            orchestrationChat.AddChatMessage(new ChatMessageContent(AuthorRole.User, 
+                $"Candidate answer: {candidateAnswer}"));
+        }
+    }
+    
+    // Parse evaluator scores
+    if (agentName == "EvaluatorAgent")
+    {
+        var match = Regex.Match(content, @"Score:\s*(?<score>[0-5])");
+        if (match.Success && int.TryParse(match.Groups["score"].Value, out var scoreValue))
+        {
+            scores.Add(scoreValue);
+            
+            // Inject score context back to orchestrator
+            orchestrationChat.AddChatMessage(new ChatMessageContent(AuthorRole.User, 
+                $"Score recorded: {scoreValue}/5. Total questions: {interviewQuestionCount}. Current scores: [{string.Join(", ", scores)}]"));
+        }
+    }
+}
+
+Console.WriteLine("\n=== MAGENTIC ONE ORCHESTRATION COMPLETE ===");
+
+static string DetectContentType(string path)
+{
+  var ext = Path.GetExtension(path).ToLowerInvariant();
+  return ext switch
+  {
+    ".pdf" => "application/pdf",
+    ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".doc" => "application/msword",
+    _ => "application/octet-stream"
+  };
+}
+
+static async Task<string> ExtractJdJsonAsync(DocumentIntelligenceClient docClient, Kernel kernel, string filePath)
+{
+  var bytes = await File.ReadAllBytesAsync(filePath);
+
+  var op = await docClient.AnalyzeDocumentAsync(
+      WaitUntil.Completed,
+      "prebuilt-layout",
+      BinaryData.FromBytes(bytes));
+
+  var result = op.Value;
+  var text = string.Join("\n", result.Paragraphs.Select(p => p.Content));
+
+  var chatCompletion = kernel.GetRequiredService<IChatCompletionService>();
+  
+  var chatHistory = new ChatHistory();
+  chatHistory.AddSystemMessage(
+      "Extract the following job description into JSON with keys: role_name, employment_type, experience, relevant_experience, primary_skills, secondary_skills, location. Rules: (1) primary_skills must only contain the core technologies explicitly tied to the 'What are we looking for' statement (e.g., Web Application and Web API development using .NET Core) and the directly associated stack (.NET Core, C# 6 or above, .NET Core MVC, .NET Core Web API, Entity Framework Core). (2) Everything else goes into secondary_skills. (3) Return JSON only.");
+  chatHistory.AddUserMessage(text);
+
+  var response = await chatCompletion.GetChatMessageContentAsync(chatHistory);
+  return response.Content ?? string.Empty;
+}
+
+static async Task<string> ExtractResumeJsonAsync(DocumentIntelligenceClient docClient, Kernel kernel, string filePath)
+{
+  var bytes = await File.ReadAllBytesAsync(filePath);
+
+  var op = await docClient.AnalyzeDocumentAsync(
+      WaitUntil.Completed,
+      "prebuilt-layout",
+      BinaryData.FromBytes(bytes));
+
+  var result = op.Value;
+  var text = string.Join("\n", result.Paragraphs.Select(p => p.Content));
+
+  var chatCompletion = kernel.GetRequiredService<IChatCompletionService>();
+  
+  var chatHistory = new ChatHistory();
+  chatHistory.AddSystemMessage(
+      "Extract the following resume into JSON with keys: Name, Education, Technical Skills, Experience in years, Work Experience, Projects, Certifications, Languages. Return JSON only.");
+  chatHistory.AddUserMessage(text);
+
+  var response = await chatCompletion.GetChatMessageContentAsync(chatHistory);
+  return response.Content ?? string.Empty;
+}
+
+// Custom Selection Strategy - Sequential with orchestrator control
+public class SequentialSelectionStrategy : SelectionStrategy
+{
+    protected override Task<Agent> SelectAgentAsync(IReadOnlyList<Agent> agents, IReadOnlyList<ChatMessageContent> history, CancellationToken cancellationToken = default)
+    {
+        // Always start with orchestrator
+        var orchestrator = agents.FirstOrDefault(a => a.Name == "Orchestrator");
+        if (orchestrator != null)
+            return Task.FromResult(orchestrator);
+        
+        return Task.FromResult(agents[0]);
+    }
+}
+
+// Custom Termination Strategy - Keyword based
+public class KeywordTerminationStrategy : TerminationStrategy
+{
+    private readonly string[] _keywords;
+    
+    public KeywordTerminationStrategy(params string[] keywords)
+    {
+        _keywords = keywords;
+    }
+    
+    protected override Task<bool> ShouldTerminateAsync(Agent agent, IReadOnlyList<ChatMessageContent> history, CancellationToken cancellationToken = default)
+    {
+        var lastMessage = history.LastOrDefault();
+        if (lastMessage?.Content == null)
+            return Task.FromResult(false);
+        
+        var shouldTerminate = _keywords.Any(k => lastMessage.Content.Contains(k, StringComparison.OrdinalIgnoreCase));
+        return Task.FromResult(shouldTerminate);
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+

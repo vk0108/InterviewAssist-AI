@@ -1,0 +1,74 @@
+﻿using System;
+using System.IO;
+using System.Threading.Tasks;
+using Microsoft.CognitiveServices.Speech;
+using Microsoft.CognitiveServices.Speech.Audio;
+using DotNetEnv;
+
+public static class TextToSpeech
+{
+    static TextToSpeech()
+    {
+        try { Env.Load(); } catch { /* ignore */ }
+    }
+
+    private static readonly string? _speechKey = Environment.GetEnvironmentVariable("SPEECH_KEY");
+    private static readonly string? _speechEndpoint = Environment.GetEnvironmentVariable("SPEECH_ENDPOINT") ?? Environment.GetEnvironmentVariable("ENDPOINT");
+    private static readonly string _voice = Environment.GetEnvironmentVariable("SPEECH_VOICE") ?? "en-US-Ava:DragonHDLatestNeural";
+
+    public static async Task SpeakAsync(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return;
+
+        if (string.IsNullOrWhiteSpace(_speechKey) || string.IsNullOrWhiteSpace(_speechEndpoint))
+        {
+            Console.WriteLine("[TTS] Skipped: SPEECH_KEY or SPEECH_ENDPOINT not set.");
+            return;
+        }
+
+        try
+        {
+            var speechConfig = SpeechConfig.FromEndpoint(new Uri(_speechEndpoint), _speechKey);
+            speechConfig.SpeechSynthesisVoiceName = _voice;
+
+            using var audioConfig = AudioConfig.FromDefaultSpeakerOutput();
+            using var synthesizer = new SpeechSynthesizer(speechConfig, audioConfig);
+            var result = await synthesizer.SpeakTextAsync(text);
+            if (result.Reason != ResultReason.SynthesizingAudioCompleted)
+            {
+                var cancel = SpeechSynthesisCancellationDetails.FromResult(result);
+                Console.WriteLine($"[TTS] Canceled: {cancel.Reason}; Code={cancel.ErrorCode}; Details={cancel.ErrorDetails}");
+            }
+            else
+            {
+                Console.WriteLine($"[TTS] Speech synthesized for: {text}");
+                var wavPath = Environment.GetEnvironmentVariable("SPEECH_OUTPUT_WAV");
+                if (!string.IsNullOrWhiteSpace(wavPath))
+                {
+                    try
+                    {
+                        var dir = Path.GetDirectoryName(wavPath);
+                        if (!string.IsNullOrWhiteSpace(dir) && !Directory.Exists(dir))
+                        {
+                            Directory.CreateDirectory(dir);
+                        }
+                        var stream = AudioDataStream.FromResult(result);
+                        await stream.SaveToWaveFileAsync(wavPath);
+                        Console.WriteLine($"[TTS] Audio also saved to: {wavPath}");
+                    }
+                    catch (Exception saveEx)
+                    {
+                        Console.WriteLine($"[TTS] Failed to save WAV: {saveEx.Message}");
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[TTS] Error: {ex.Message}");
+        }
+    }
+}
+
+

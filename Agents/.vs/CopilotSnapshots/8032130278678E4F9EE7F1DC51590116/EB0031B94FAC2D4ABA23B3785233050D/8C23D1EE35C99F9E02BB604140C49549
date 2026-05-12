@@ -1,0 +1,33 @@
+﻿using DotNetEnv;
+using Microsoft.CognitiveServices.Speech;
+using Microsoft.CognitiveServices.Speech.Audio;
+using System;
+using System.IO;
+using System.Threading.Tasks;
+
+public static class SpeechToText
+{
+    static SpeechToText()
+    {
+        try { Env.Load(); } catch { /* ignore */ }
+    }
+
+    private static readonly string? _speechKey = Environment.GetEnvironmentVariable("SPEECH_KEY");
+    private static readonly string? _speechEndpoint = Environment.GetEnvironmentVariable("SPEECH_TO_TEXT_ENDPOINT") ?? Environment.GetEnvironmentVariable("ENDPOINT");
+    private static readonly string? _speechRegion = Environment.GetEnvironmentVariable("SPEECH_REGION");
+    async static Task FromMic(SpeechConfig speechConfig)
+    {
+        using var audioConfig = AudioConfig.FromDefaultMicrophoneInput();
+        using var speechRecognizer = new SpeechRecognizer(speechConfig, audioConfig);
+
+        Console.WriteLine("Speak into your microphone.");
+        var speechRecognitionResult = await speechRecognizer.RecognizeOnceAsync();
+        Console.WriteLine($"RECOGNIZED: Text={speechRecognitionResult.Text}");
+    }
+
+    async static Task Main(string[] args)
+    {
+        var speechConfig = SpeechConfig.FromEndpoint(new Uri(_speechEndpoint), _speechKey);
+        await FromMic(speechConfig);
+    }
+}

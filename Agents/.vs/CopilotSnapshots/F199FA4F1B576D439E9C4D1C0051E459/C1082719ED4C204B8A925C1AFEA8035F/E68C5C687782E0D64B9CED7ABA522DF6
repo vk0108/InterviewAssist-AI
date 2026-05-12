@@ -1,0 +1,57 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using Azure;
+using Azure.AI.TextAnalytics;
+
+public sealed class AzureLanguageService
+{
+    private readonly TextAnalyticsClient _client;
+
+    public AzureLanguageService()
+    {
+        var endpoint = Environment.GetEnvironmentVariable("AZURE_AI_LANGUAGE_ENDPOINT")
+            ?? Environment.GetEnvironmentVariable("ENDPOINT_TO_CALL_LANGUAGE_API")
+            ?? throw new InvalidOperationException("AZURE_AI_LANGUAGE_ENDPOINT/ENDPOINT_TO_CALL_LANGUAGE_API not set.");
+        var key = Environment.GetEnvironmentVariable("AZURE_AI_LANGUAGE_KEY")
+            ?? Environment.GetEnvironmentVariable("AZURE_AI_KEY")
+            ?? throw new InvalidOperationException("AZURE_AI_LANGUAGE_KEY/AZURE_AI_KEY not set.");
+
+        _client = new TextAnalyticsClient(new Uri(endpoint), new AzureKeyCredential(key));
+    }
+
+    public async Task<string> SummarizeAsync(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return string.Empty;
+        }
+
+        var batchInput = new List<string> { text };
+        var actions = new TextAnalyticsActions
+        {
+            ExtractSummaryActions = { new ExtractSummaryAction() }
+        };
+
+        var operation = await _client.StartAnalyzeActionsAsync(batchInput, actions);
+        await operation.WaitForCompletionAsync();
+
+        var summaryLines = new List<string>();
+        await foreach (var page in operation.Value)
+        {
+            foreach (var summaryResult in page.ExtractSummaryResults)
+            {
+                foreach (var doc in summaryResult.DocumentsResults)
+                {
+                    if (doc.HasError) continue;
+                    foreach (var sentence in doc.Sentences)
+                    {
+                        summaryLines.Add(sentence.Text.Trim());
+                    }
+                }
+            }
+        }
+
+        return string.Join(" ", summaryLines);
+    }
+}

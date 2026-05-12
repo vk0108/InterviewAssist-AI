@@ -1,0 +1,114 @@
+{
+  "format": 1,
+  "restore": {
+    "C:\\InterviewAssist Agentic AI\\Agents\\Agents.csproj": {}
+  },
+  "projects": {
+    "C:\\InterviewAssist Agentic AI\\Agents\\Agents.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\InterviewAssist Agentic AI\\Agents\\Agents.csproj",
+        "projectName": "Agents",
+        "projectPath": "C:\\InterviewAssist Agentic AI\\Agents\\Agents.csproj",
+        "packagesPath": "C:\\Users\\krith\\.nuget\\packages\\",
+        "outputPath": "C:\\InterviewAssist Agentic AI\\Agents\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
+        ],
+        "configFilePaths": [
+          "C:\\InterviewAssist Agentic AI\\Agents\\NuGet.Config",
+          "C:\\Users\\krith\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net9.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net9.0": {
+            "targetAlias": "net9.0",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "9.0.300"
+      },
+      "frameworks": {
+        "net9.0": {
+          "targetAlias": "net9.0",
+          "dependencies": {
+            "Azure.AI.DocumentIntelligence": {
+              "target": "Package",
+              "version": "[1.0.0, )"
+            },
+            "Azure.AI.OpenAI": {
+              "target": "Package",
+              "version": "[2.8.0-beta.1, )"
+            },
+            "Azure.AI.TextAnalytics": {
+              "target": "Package",
+              "version": "[5.2.0-beta.1, )"
+            },
+            "Azure.Identity": {
+              "target": "Package",
+              "version": "[1.17.1, )"
+            },
+            "DotNetEnv": {
+              "target": "Package",
+              "version": "[3.1.1, )"
+            },
+            "Microsoft.Agents.AI.OpenAI": {
+              "target": "Package",
+              "version": "[1.0.0-preview.251219.1, )"
+            },
+            "Microsoft.Agents.AI.Workflows": {
+              "target": "Package",
+              "version": "[1.0.0-preview.251219.1, )"
+            },
+            "Microsoft.CognitiveServices.Speech": {
+              "target": "Package",
+              "version": "[1.40.0, )"
+            },
+            "QuestPDF": {
+              "target": "Package",
+              "version": "[2025.12.4, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.AspNetCore.App": {
+              "privateAssets": "none"
+            },
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.308/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}

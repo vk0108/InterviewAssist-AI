@@ -1,0 +1,175 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json;
+using System.Threading.Tasks;
+using Azure.AI.OpenAI;
+using Azure.Identity;
+using Microsoft.Extensions.AI;
+using QuestPDF.Fluent;
+using QuestPDF.Helpers;
+using QuestPDF.Infrastructure;
+
+public sealed class ConvoSumm
+{
+    public static async Task GenerateAsync(
+        EnvironmentConfig config,
+        IEnumerable<string> exchangeHistory,
+        string candidateName,
+        string outputPath)
+    {
+        var historyText = string.Join("\n---\n", exchangeHistory);
+        if (string.IsNullOrWhiteSpace(historyText))
+        {
+            Console.WriteLine("No interview history available; skipping report generation.");
+            return;
+        }
+
+        var systemPrompt = """
+You are a report writer generating a concise interview report as JSON.
+Structure the JSON exactly as follows:
+{
+  "quickRecap": string,
+  "technicalTraining": [ { "title": string, "summary": string, "rating": number } ],
+  "softSkills": [ { "title": string, "summary": string, "rating": number } ],
+  "discussionSummary": string,
+  "interviewerComments": string
+}
+Guidelines:
+- Base everything only on the provided interview conversation history.
+- technicalTraining: include 3-6 key skills/topics, each with a short summary and rating 1-5.
+- softSkills: include items like communication, attitude, collaboration, with rating 1-5.
+- quickRecap: 3-4 sentences summarizing overall performance.
+- discussionSummary: concise paragraphs covering key topics discussed.
+- interviewerComments: brief recommendation on fit.
+Keep language concise and professional.
+""";
+        var userPrompt = $"Interview conversation history:\n{historyText}\n\nReturn only the JSON schema above.";
+
+        var client = new AzureOpenAIClient(new Uri(config.LanguageEndpoint), new AzureCliCredential());
+        var chatClient = client.GetChatClient(config.DeploymentName);
+
+        var messages = new List<ChatMessage>
+        {
+            new(ChatRole.System, systemPrompt),
+            new(ChatRole.User, userPrompt)
+        };
+
+        string json;
+        try
+        {
+            var response = await chatClient.CompleteChatAsync(messages);
+            json = response.Content[0].Text.Trim();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LLM summarization failed: {ex.Message}");
+            return;
+        }
+
+        ReportPayload payload;
+        try
+        {
+            payload = JsonSerializer.Deserialize<ReportPayload>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            }) ?? new ReportPayload();
+        }
+        catch
+        {
+            payload = new ReportPayload();
+        }
+
+        payload.QuickRecap ??= string.Empty;
+        payload.DiscussionSummary ??= string.Empty;
+        payload.InterviewerComments ??= string.Empty;
+        payload.TechnicalTraining ??= new List<SectionItem>();
+        payload.SoftSkills ??= new List<SectionItem>();
+
+        if (payload.TechnicalTraining.Count == 0)
+        {
+            payload.TechnicalTraining.Add(new SectionItem { Title = "Overall Technical", Summary = payload.DiscussionSummary, Rating = 0 });
+        }
+
+        if (payload.SoftSkills.Count == 0)
+        {
+            payload.SoftSkills.Add(new SectionItem { Title = "Communication", Summary = "Not provided", Rating = 0 });
+        }
+
+        RenderPdf(outputPath, candidateName, payload);
+        Console.WriteLine($"Report generated at: {outputPath}");
+    }
+
+    private static void RenderPdf(string outputPath, string candidateName, ReportPayload payload)
+    {
+        Document.Create(container =>
+        {
+            container.Page(page =>
+            {
+                page.Size(PageSizes.A4);
+                page.Margin(30);
+                page.DefaultTextStyle(TextStyle.Default.FontSize(11));
+
+                page.Header().Text($"Interview Report - {candidateName}").SemiBold().FontSize(18);
+
+                page.Content().PaddingVertical(10).Column(col =>
+                {
+                    col.Spacing(10);
+
+                    col.Item().Element(e => Section(e, "Quick Recap of Interview", payload.QuickRecap));
+
+                    col.Item().Border(1).BorderColor(Colors.Grey.Lighten2).Padding(8).Column(c =>
+                    {
+                        c.Spacing(6);
+                        c.Item().Text("Technical Training").SemiBold().FontSize(14);
+                        foreach (var item in payload.TechnicalTraining)
+                        {
+                            c.Item().Text($"{item.Title} (Rating: {item.Rating:F1}/5)").SemiBold();
+                            c.Item().Text(item.Summary ?? string.Empty);
+                        }
+                    });
+
+                    col.Item().Border(1).BorderColor(Colors.Grey.Lighten2).Padding(8).Column(c =>
+                    {
+                        c.Spacing(6);
+                        c.Item().Text("Soft Skills").SemiBold().FontSize(14);
+                        foreach (var item in payload.SoftSkills)
+                        {
+                            c.Item().Text($"{item.Title}: {item.Rating:F1}/5").SemiBold();
+                            c.Item().Text(item.Summary ?? string.Empty);
+                        }
+                    });
+
+                    col.Item().Element(e => Section(e, "Summary of Discussion", payload.DiscussionSummary));
+                    col.Item().Element(e => Section(e, "Interviewer Comments", payload.InterviewerComments));
+                });
+            });
+        }).GeneratePdf(outputPath);
+    }
+
+    private static void Section(IContainer container, string title, string body)
+    {
+        container.Border(1).BorderColor(Colors.Grey.Lighten2).Padding(8).Column(c =>
+        {
+            c.Spacing(6);
+            c.Item().Text(title).SemiBold().FontSize(14);
+            c.Item().Text(string.IsNullOrWhiteSpace(body) ? "Not provided." : body);
+        });
+    }
+
+    private sealed class ReportPayload
+    {
+        public string? QuickRecap { get; set; }
+        public List<SectionItem>? TechnicalTraining { get; set; }
+        public List<SectionItem>? SoftSkills { get; set; }
+        public string? DiscussionSummary { get; set; }
+        public string? InterviewerComments { get; set; }
+    }
+
+    private sealed class SectionItem
+    {
+        public string? Title { get; set; }
+        public string? Summary { get; set; }
+        public double Rating { get; set; }
+    }
+}

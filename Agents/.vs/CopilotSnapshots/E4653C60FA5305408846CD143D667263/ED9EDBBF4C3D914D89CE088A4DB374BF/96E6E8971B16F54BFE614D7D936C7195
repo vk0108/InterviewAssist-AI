@@ -1,0 +1,153 @@
+﻿using DotNetEnv;
+using Microsoft.CognitiveServices.Speech;
+using Microsoft.CognitiveServices.Speech.Audio;
+using Microsoft.CognitiveServices.Speech.PronunciationAssessment;
+using System;
+using System.Collections.Generic;
+using System.Text;
+using System.Threading.Tasks;
+
+public static class SpeechToText
+{
+    static SpeechToText()
+    {
+        try { Env.Load(); } catch { /* ignore */ }
+    }
+
+    private static readonly string? _speechKey = Environment.GetEnvironmentVariable("SPEECH_KEY");
+    private static readonly string? _speechEndpoint = Environment.GetEnvironmentVariable("SPEECH_TO_TEXT_ENDPOINT") ?? Environment.GetEnvironmentVariable("ENDPOINT");
+    private static readonly string? _speechRegion = Environment.GetEnvironmentVariable("SPEECH_REGION");
+    private static readonly string _speechLanguage = Environment.GetEnvironmentVariable("SPEECH_LANGUAGE") ?? "en-US";
+
+    public sealed class SpeechCaptureResult
+    {
+        public string? Text { get; init; }
+        public double? PronunciationScore { get; init; }
+    }
+
+    // Listens continuously until 10 seconds of silence
+    public static async Task<SpeechCaptureResult?> ListenOnceAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_speechKey) || (string.IsNullOrWhiteSpace(_speechEndpoint) && string.IsNullOrWhiteSpace(_speechRegion)))
+        {
+            Console.WriteLine("[STT] Skipped: SPEECH_KEY plus SPEECH_TO_TEXT_ENDPOINT/SPEECH_REGION not set.");
+            return null;
+        }
+
+        try
+        {
+            SpeechConfig speechConfig;
+            if (!string.IsNullOrWhiteSpace(_speechRegion))
+            {
+                Console.WriteLine($"[STT] Using region={_speechRegion}");
+                speechConfig = SpeechConfig.FromSubscription(_speechKey!, _speechRegion);
+            }
+            else
+            {
+                Console.WriteLine($"[STT] Using endpoint={_speechEndpoint}");
+                speechConfig = SpeechConfig.FromEndpoint(new Uri(_speechEndpoint!), _speechKey);
+            }
+
+            speechConfig.SpeechRecognitionLanguage = _speechLanguage;
+
+            // Allow up to 10s initial silence and 10s end silence; we also manage silence manually below
+            speechConfig.SetProperty(PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, "10000");
+            speechConfig.SetProperty(PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "10000");
+
+            using var audioConfig = AudioConfig.FromDefaultMicrophoneInput();
+            using var recognizer = new SpeechRecognizer(speechConfig, audioConfig);
+            var sb = new StringBuilder();
+            var pronunciationScores = new List<double>();
+
+            var pronunciationConfig = new PronunciationAssessmentConfig(
+                referenceText: string.Empty,
+                gradingSystem: GradingSystem.FivePoint);
+            pronunciationConfig.EnableProsodyAssessment();
+            pronunciationConfig.ApplyTo(recognizer);
+
+            var silenceTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            System.Threading.CancellationTokenSource silenceCts = new();
+
+            void ResetSilenceTimer()
+            {
+                silenceCts.Cancel();
+                silenceCts.Dispose();
+                silenceCts = new System.Threading.CancellationTokenSource();
+                _ = Task.Delay(TimeSpan.FromSeconds(10), silenceCts.Token)
+                    .ContinueWith(t =>
+                    {
+                        if (!t.IsCanceled)
+                            silenceTcs.TrySetResult(true);
+                    }, TaskScheduler.Default);
+            }
+
+            ResetSilenceTimer();
+
+            recognizer.Recognizing += (s, e) =>
+            {
+                if (!string.IsNullOrWhiteSpace(e.Result?.Text))
+                {
+                    ResetSilenceTimer();
+                }
+            };
+
+            recognizer.Recognized += (s, e) =>
+            {
+                if (e.Result.Reason == ResultReason.RecognizedSpeech && !string.IsNullOrWhiteSpace(e.Result.Text))
+                {
+                    sb.AppendLine(e.Result.Text);
+                    try
+                    {
+                        var paResult = PronunciationAssessmentResult.FromResult(e.Result);
+                        pronunciationScores.Add(paResult.PronunciationScore);
+                    }
+                    catch
+                    {
+                        // ignore pronunciation assessment errors per segment
+                    }
+                    ResetSilenceTimer();
+                }
+            };
+
+            recognizer.Canceled += (s, e) =>
+            {
+                Console.WriteLine($"[STT] Canceled: {e.Reason}; ErrorDetails={e.ErrorDetails}");
+                silenceTcs.TrySetResult(true);
+            };
+
+            Console.WriteLine("[STT] Speak your answer now... (listening until 10s of silence)");
+            await recognizer.StartContinuousRecognitionAsync();
+            try
+            {
+                await silenceTcs.Task;
+            }
+            finally
+            {
+                silenceCts.Cancel();
+                silenceCts.Dispose();
+                await recognizer.StopContinuousRecognitionAsync();
+            }
+
+            var text = sb.ToString().Trim();
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                Console.WriteLine("[STT] No speech could be recognized.");
+                return null;
+            }
+
+            var avgPronunciation = pronunciationScores.Count > 0 ? pronunciationScores.Average() : (double?)null;
+            Console.WriteLine($"[STT] Recognized: {text}");
+            if (avgPronunciation.HasValue)
+            {
+                Console.WriteLine($"[STT] Pronunciation score: {avgPronunciation.Value:F1}/5");
+            }
+
+            return new SpeechCaptureResult { Text = text, PronunciationScore = avgPronunciation };
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[STT] Error: {ex.Message}");
+            return null;
+        }
+    }
+}

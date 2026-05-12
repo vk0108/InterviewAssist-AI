@@ -1,0 +1,6 @@
+﻿AZURE_OPENAI_ENDPOINT0=https://interviewassistagent-resource.openai.azure.com/
+AZURE_OPENAI_DEPLOYMENT_NAME=gpt-4o-mini
+DOCINTEL_ENDPOINT=https://interviewassistagent-resource.cognitiveservices.azure.com/
+DOCINTEL_KEY=50GAPkGlnFXa8RzadC4gzAH5WLGEG7zkWCnyL1biX6aXQMB5nj6qJQQJ99CAACYeBjFXJ3w3AAAAACOGKnS6
+JD_FILE_PATH=C:\InterviewAssist Agentic AI\Agents\JobDes\DotNet Sr. Developer - JD.docx
+RESUME_FILE_PATH=C:\InterviewAssist Agentic AI\Agents\Resumes\Partha U.docx

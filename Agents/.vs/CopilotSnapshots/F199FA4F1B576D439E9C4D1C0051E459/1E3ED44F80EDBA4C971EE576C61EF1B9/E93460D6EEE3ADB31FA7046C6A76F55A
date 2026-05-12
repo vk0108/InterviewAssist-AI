@@ -1,0 +1,19 @@
+﻿using System.Threading.Tasks;
+
+public class Program
+{
+    public static async Task Main()
+    {
+        if (System.Environment.GetEnvironmentVariable("LANG_CHECK") == "1")
+        {
+            var lang = new AzureLanguageService();
+            await lang.CheckConnectionAsync();
+            return;
+        }
+
+        var config = EnvironmentConfig.Build();
+        var agents = AgentFactory.Create(config.ChatClient);
+        var workflow = new InterviewWorkflow(config, agents);
+        await workflow.RunAsync();
+    }
+}

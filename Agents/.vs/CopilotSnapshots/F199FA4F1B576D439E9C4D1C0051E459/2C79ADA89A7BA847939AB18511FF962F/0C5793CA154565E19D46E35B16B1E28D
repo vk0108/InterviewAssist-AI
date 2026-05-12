@@ -1,0 +1,12 @@
+﻿using System.Threading.Tasks;
+
+public class Program
+{
+    public static async Task Main()
+    {
+        var config = EnvironmentConfig.Build();
+        var agents = AgentFactory.Create(config.ChatClient);
+        var workflow = new InterviewWorkflow(config, agents);
+        await workflow.RunAsync();
+    }
+}

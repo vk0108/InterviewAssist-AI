@@ -1,0 +1,204 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using QuestPDF.Fluent;
+using QuestPDF.Helpers;
+using QuestPDF.Infrastructure;
+
+public sealed class ReportGeneration
+{
+    static ReportGeneration()
+    {
+        QuestPDF.Settings.License = LicenseType.Community;
+    }
+
+    public static void GeneratePdfReport(string candidateName, ConvoSumm.ReportPayload payload, IEnumerable<int> scores, string outputPath)
+    {
+        var bytes = GeneratePdfBytes(candidateName, payload, scores);
+        System.IO.File.WriteAllBytes(outputPath, bytes);
+    }
+
+    public static byte[] GeneratePdfBytes(string candidateName, ConvoSumm.ReportPayload payload, IEnumerable<int> scores)
+    {
+        var scoreList = scores?.ToList() ?? new List<int>();
+        var averageScore = scoreList.Any() ? scoreList.Average() : 0;
+
+        return Document.Create(container =>
+        {
+            container.Page(page =>
+            {
+                page.Size(PageSizes.A4);
+                page.Margin(40);
+                page.PageColor(Colors.White);
+                page.DefaultTextStyle(x => x.FontSize(11).FontFamily("Calibri"));
+
+                page.Header().Element(header => ComposeHeader(header, candidateName));
+                page.Content().Element(content => ComposeContent(content, payload, averageScore, scoreList.Count));
+                page.Footer().Element(ComposeFooter);
+            });
+        })
+        .GeneratePdf();
+    }
+
+    private static void ComposeHeader(IContainer container, string candidateName)
+    {
+        container.Column(column =>
+        {
+            column.Item().BorderBottom(2).BorderColor(Colors.Blue.Darken2).PaddingBottom(10).Row(row =>
+            {
+                row.RelativeItem().Column(col =>
+                {
+                    col.Item().Text("Interview Report").FontSize(24).Bold().FontColor(Colors.Blue.Darken2);
+                    col.Item().Text(candidateName).FontSize(18).SemiBold().FontColor(Colors.Grey.Darken2);
+                });
+
+                row.ConstantItem(120).AlignRight().Column(col =>
+                {
+                    col.Item().Text($"Date: {DateTime.Now:MMM dd, yyyy}").FontSize(10);
+                    col.Item().Text($"Time: {DateTime.Now:HH:mm}").FontSize(10);
+                });
+            });
+
+            column.Item().PaddingTop(5);
+        });
+    }
+
+    private static void ComposeContent(IContainer container, ConvoSumm.ReportPayload payload, double averageScore, int totalQuestions)
+    {
+        container.Column(column =>
+        {
+            column.Item().PaddingTop(15).Element(c => ComposeSectionTitle(c, "Quick Recap"));
+            column.Item().PaddingTop(5).PaddingBottom(10).Text(payload.QuickRecap)
+                .FontSize(11).LineHeight(1.5f);
+
+            column.Item().PaddingTop(10).PaddingBottom(15).Background(Colors.Grey.Lighten3)
+                .Padding(15).Column(col =>
+                {
+                    col.Item().Row(row =>
+                    {
+                        row.RelativeItem().Text($"Average Score: {averageScore:F2} / 5.0").FontSize(14).Bold();
+                        row.RelativeItem().AlignRight().Text($"Questions Asked: {totalQuestions}").FontSize(12).SemiBold();
+                    });
+                    col.Item().PaddingTop(5).Element(c => ComposeScoreBar(c, averageScore));
+                });
+
+            column.Item().PaddingTop(15).Element(c => ComposeSectionTitle(c, "Technical Training"));
+            column.Item().PaddingTop(5).Table(table =>
+            {
+                table.ColumnsDefinition(columns =>
+                {
+                    columns.RelativeColumn(3);
+                    columns.ConstantColumn(60);
+                    columns.RelativeColumn(5);
+                });
+
+                foreach (var item in payload.TechnicalTraining ?? new List<ConvoSumm.SectionItem>())
+                {
+                    table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten2)
+                        .PaddingVertical(8).Text(item.Title).FontSize(11).SemiBold();
+
+                    table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten2)
+                        .PaddingVertical(8).AlignCenter().Element(c => ComposeRatingBadge(c, item.Rating));
+
+                    table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten2)
+                        .PaddingVertical(8).PaddingLeft(10).Text(item.Summary).FontSize(10).LineHeight(1.4f);
+                }
+            });
+
+            column.Item().PaddingTop(15).Element(c => ComposeSectionTitle(c, "Soft Skills"));
+            column.Item().PaddingTop(5).Table(table =>
+            {
+                table.ColumnsDefinition(columns =>
+                {
+                    columns.RelativeColumn(3);
+                    columns.ConstantColumn(60);
+                    columns.RelativeColumn(5);
+                });
+
+                foreach (var item in payload.SoftSkills ?? new List<ConvoSumm.SectionItem>())
+                {
+                    table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten2)
+                        .PaddingVertical(8).Text(item.Title).FontSize(11).SemiBold();
+
+                    table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten2)
+                        .PaddingVertical(8).AlignCenter().Element(c => ComposeRatingBadge(c, item.Rating));
+
+                    table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten2)
+                        .PaddingVertical(8).PaddingLeft(10).Text(item.Summary).FontSize(10).LineHeight(1.4f);
+                }
+            });
+
+            column.Item().PaddingTop(15).Element(c => ComposeSectionTitle(c, "Summary of Discussion"));
+            column.Item().PaddingTop(5).Column(col =>
+            {
+                foreach (var topic in payload.DiscussionTopics ?? new List<ConvoSumm.DiscussionTopic>())
+                {
+                    col.Item().PaddingTop(10).Column(topicCol =>
+                    {
+                        topicCol.Item().Text(topic.Title).FontSize(12).SemiBold().FontColor(Colors.Blue.Darken1);
+                        topicCol.Item().PaddingTop(3).PaddingLeft(10).Text(topic.Summary)
+                            .FontSize(10).LineHeight(1.5f);
+                    });
+                }
+            });
+
+            column.Item().PaddingTop(15).Element(c => ComposeSectionTitle(c, "Interviewer Comments"));
+            column.Item().PaddingTop(5).Background(Colors.Blue.Lighten4).Padding(12)
+                .Text(payload.InterviewerComments).FontSize(11).LineHeight(1.5f);
+        });
+    }
+
+    private static void ComposeSectionTitle(IContainer container, string title)
+    {
+        container.BorderBottom(1).BorderColor(Colors.Blue.Darken1).PaddingBottom(5)
+            .Text(title).FontSize(14).Bold().FontColor(Colors.Blue.Darken2);
+    }
+
+    private static void ComposeRatingBadge(IContainer container, double rating)
+    {
+        var color = rating switch
+        {
+            >= 4.5 => Colors.Green.Darken1,
+            >= 3.5 => Colors.Green.Lighten1,
+            >= 2.5 => Colors.Orange.Lighten1,
+            >= 1.5 => Colors.Orange.Darken1,
+            _ => Colors.Red.Darken1
+        };
+
+        container.Background(color).Padding(4).AlignCenter()
+            .Text($"{rating:F1}/5").FontSize(10).Bold().FontColor(Colors.White);
+    }
+
+    private static void ComposeScoreBar(IContainer container, double score)
+    {
+        var percentage = (score / 5.0) * 100;
+        var color = score switch
+        {
+            >= 4.0 => Colors.Green.Darken1,
+            >= 3.0 => Colors.Green.Lighten1,
+            >= 2.0 => Colors.Orange.Lighten1,
+            _ => Colors.Red.Darken1
+        };
+
+        container.Row(row =>
+        {
+            row.RelativeItem().Height(20).Border(1).BorderColor(Colors.Grey.Darken1).Row(innerRow =>
+            {
+                innerRow.RelativeItem((float)percentage).Background(color);
+                innerRow.RelativeItem((float)(100 - percentage)).Background(Colors.Grey.Lighten2);
+            });
+            row.ConstantItem(60).PaddingLeft(10).AlignMiddle()
+                .Text($"{percentage:F1}%").FontSize(12).Bold();
+        });
+    }
+
+    private static void ComposeFooter(IContainer container)
+    {
+        container.AlignCenter().Text(text =>
+        {
+            text.Span("Generated by ").FontSize(9).FontColor(Colors.Grey.Darken1);
+            text.Span("AI Interview Assistant").FontSize(9).SemiBold().FontColor(Colors.Blue.Darken2);
+            text.Span(" | www.interviewassist.com").FontSize(9).FontColor(Colors.Grey.Darken1);
+        });
+    }
+}

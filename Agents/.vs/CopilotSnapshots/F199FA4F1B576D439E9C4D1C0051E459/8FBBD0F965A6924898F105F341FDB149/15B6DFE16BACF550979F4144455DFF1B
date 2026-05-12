@@ -1,0 +1,142 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json;
+using System.Threading.Tasks;
+using Microsoft.Agents.AI;
+using Microsoft.Agents.AI.Workflows;
+using Microsoft.Extensions.AI;
+
+public sealed class ConvoSumm
+{
+    public static async Task GenerateAsync(
+        EnvironmentConfig config,
+        IEnumerable<string> exchangeHistory,
+        string candidateName,
+        string outputPath)
+    {
+        var historyText = string.Join("\n---\n", exchangeHistory);
+        if (string.IsNullOrWhiteSpace(historyText))
+        {
+            Console.WriteLine("No interview history available; skipping report generation.");
+            return;
+        }
+
+        var systemPrompt = """
+You are a report writer generating a concise interview report as JSON.
+Structure the JSON exactly as follows:
+{
+  "quickRecap": string,
+  "technicalTraining": [ { "title": string, "summary": string, "rating": number } ],
+  "softSkills": [ { "title": string, "summary": string, "rating": number } ],
+  "discussionSummary": string,
+  "interviewerComments": string
+}
+Guidelines:
+- Base everything only on the provided interview conversation history.
+- technicalTraining: include 3-6 key skills/topics, each with a short summary and rating 1-5.
+- softSkills: include items like communication, attitude, collaboration, with rating 1-5.
+- quickRecap: 3-4 sentences summarizing overall performance.
+- discussionSummary: concise paragraphs covering key topics discussed.
+- interviewerComments: brief recommendation on fit.
+Keep language concise and professional.
+""";
+        var userPrompt = $"Interview conversation history:\n{historyText}\n\nReturn only the JSON schema above.";
+
+        var summarizerAgent = new ChatClientAgent(
+            config.ChatClient,
+            systemPrompt,
+            "report_summarizer",
+            "Generates structured interview report JSON");
+
+        var messages = new List<ChatMessage>
+        {
+            new(ChatRole.User, userPrompt)
+        };
+
+        string json;
+        try
+        {
+            var result = await summarizerAgent.RunAsync(messages, thread: null, options: null, cancellationToken: default);
+            var last = result.Messages?.LastOrDefault();
+            json = last?.GetType().GetProperty("Text")?.GetValue(last) as string
+                ?? last?.ToString()
+                ?? string.Empty;
+            json = json.Trim();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LLM summarization failed: {ex.Message}");
+            return;
+        }
+
+        ReportPayload payload;
+        try
+        {
+            payload = JsonSerializer.Deserialize<ReportPayload>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            }) ?? new ReportPayload();
+        }
+        catch
+        {
+            payload = new ReportPayload();
+        }
+
+        payload.QuickRecap ??= string.Empty;
+        payload.DiscussionSummary ??= string.Empty;
+        payload.InterviewerComments ??= string.Empty;
+        payload.TechnicalTraining ??= new List<SectionItem>();
+        payload.SoftSkills ??= new List<SectionItem>();
+
+        if (payload.TechnicalTraining.Count == 0)
+        {
+            payload.TechnicalTraining.Add(new SectionItem { Title = "Overall Technical", Summary = payload.DiscussionSummary, Rating = 0 });
+        }
+
+        if (payload.SoftSkills.Count == 0)
+        {
+            payload.SoftSkills.Add(new SectionItem { Title = "Communication", Summary = "Not provided", Rating = 0 });
+        }
+
+        PrintReport(candidateName, payload);
+    }
+
+    private static void PrintReport(string candidateName, ReportPayload payload)
+    {
+        Console.WriteLine($"\n===== Interview Report - {candidateName} =====");
+        Console.WriteLine("\nQuick Recap:\n" + payload.QuickRecap);
+
+        Console.WriteLine("\nTechnical Training:");
+        foreach (var item in payload.TechnicalTraining)
+        {
+            Console.WriteLine($"- {item.Title} (Rating: {item.Rating:F1}/5): {item.Summary}");
+        }
+
+        Console.WriteLine("\nSoft Skills:");
+        foreach (var item in payload.SoftSkills)
+        {
+            Console.WriteLine($"- {item.Title} (Rating: {item.Rating:F1}/5): {item.Summary}");
+        }
+
+        Console.WriteLine("\nSummary of Discussion:\n" + payload.DiscussionSummary);
+        Console.WriteLine("\nInterviewer Comments:\n" + payload.InterviewerComments);
+        Console.WriteLine("===== End of Report =====\n");
+    }
+
+    private sealed class ReportPayload
+    {
+        public string? QuickRecap { get; set; }
+        public List<SectionItem>? TechnicalTraining { get; set; }
+        public List<SectionItem>? SoftSkills { get; set; }
+        public string? DiscussionSummary { get; set; }
+        public string? InterviewerComments { get; set; }
+    }
+
+    private sealed class SectionItem
+    {
+        public string? Title { get; set; }
+        public string? Summary { get; set; }
+        public double Rating { get; set; }
+    }
+}

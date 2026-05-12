@@ -1,0 +1,80 @@
+﻿using System;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using Azure;
+using Azure.AI.DocumentIntelligence;
+using Microsoft.Agents.AI.Workflows;
+using Microsoft.Extensions.AI;
+
+public static class DocumentExtractionService
+{
+    public static async Task<string> ExtractJdJsonAsync(DocumentIntelligenceClient docClient, IChatClient chatClient, string filePath)
+    {
+        var bytes = await File.ReadAllBytesAsync(filePath);
+
+        var op = await docClient.AnalyzeDocumentAsync(
+            WaitUntil.Completed,
+            "prebuilt-layout",
+            BinaryData.FromBytes(bytes));
+
+        var result = op.Value;
+        var text = string.Join("\n", result.Paragraphs.Select(p => p.Content));
+
+        var messages = new List<ChatMessage>
+        {
+            new(ChatRole.System,
+                "Extract the following job description into JSON with keys: role_name, employment_type, experience, relevant_experience, primary_skills, secondary_skills. Rules: (1) Primary skills come ONLY from bold/emphasized text within the requirements/skills bullets. Extract those bold segments, split them into atomic skill phrases (split on commas, slashes, parentheses, hyphens, and conjunctions and/&; trim; remove quotes/dots; deduplicate) and put all resulting tokens in primary_skills. (2) All non-bold bullet content goes to secondary_skills; split similarly into atomic phrases and exclude any token already in primary_skills. (3) If bold/emphasis cannot be detected, fall back to using only the first four bullet lines for primary_skills (split as above) and place remaining bullets in secondary_skills. (4) If the section is absent, primary_skills must only contain the core technologies explicitly tied to the 'What are we looking for' statement (e.g., Web Application and Web API development using .NET Core) and the directly associated stack (.NET Core, C# 6 or above, .NET Core MVC, .NET Core Web API, Entity Framework Core). (5) Everything else goes into secondary_skills. (6) Return JSON only."),
+            new(ChatRole.User, text)
+        };
+
+        var resp = await chatClient.GetResponseAsync(messages);
+        var respMsg = resp.Messages?.LastOrDefault();
+        var jdJson = respMsg?.GetType().GetProperty("Text")?.GetValue(respMsg) as string
+            ?? respMsg?.ToString()
+            ?? resp.ToString();
+
+        return jdJson;
+    }
+
+    public static async Task<string> ExtractResumeJsonAsync(DocumentIntelligenceClient docClient, IChatClient chatClient, string filePath)
+    {
+        var bytes = await File.ReadAllBytesAsync(filePath);
+
+        var op = await docClient.AnalyzeDocumentAsync(
+            WaitUntil.Completed,
+            "prebuilt-layout",
+            BinaryData.FromBytes(bytes));
+
+        var result = op.Value;
+        var text = string.Join("\n", result.Paragraphs.Select(p => p.Content));
+        var Currentyear = DateTime.Now.Year;
+        var messages = new List<ChatMessage>
+        {
+            new(ChatRole.System,
+                $"Extract the following resume into JSON with keys: Name, Education, Technical Skills, Experience in years (If Experience in years is not explicitely mentioned, Look on to the Work Experience to calculate the number of years considering the current year is {Currentyear}), Work Experience (each with role, company, start_date, end_date or present, duration_years if dates provided, tech_stack listing explicit frameworks/tech used such as .NET Core, ASP.NET MVC/Web API, Blazor, C#, Entity Framework, plus responsibilities/achievements bullets summarizing what was done in that role), Projects, Certifications, Languages. Preserve framework and stack names verbatim where present (e.g., '.NET Core', 'C#', 'ASP.NET MVC', 'ASP.NET Web API', 'Blazor'). Return JSON only."),
+            new(ChatRole.User, text)
+        };
+
+        var resp = await chatClient.GetResponseAsync(messages);
+        var respMsg = resp.Messages?.LastOrDefault();
+        var resumeJson = respMsg?.GetType().GetProperty("Text")?.GetValue(respMsg) as string
+            ?? respMsg?.ToString()
+            ?? resp.ToString();
+
+        return resumeJson;
+    }
+
+    public static string DetectContentType(string path
+)
+    {
+        var ext = Path.GetExtension(path).ToLowerInvariant();
+        return ext switch
+        {
+            ".pdf" => "application/pdf",
+            ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".doc" => "application/msword",
+            _ => "application/octet-stream"
+        };
+    }
+}

@@ -1,0 +1,13 @@
+﻿using Azure.AI.OpenAI;
+using Azure.Identity;
+using Microsoft.Extensions.AI;
+using System.Net;
+
+
+public partial class ConvoSumm
+{
+    public static async Task SummarizedReport()
+    {
+        
+    }
+}

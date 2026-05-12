@@ -1,0 +1,413 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
+using Microsoft.Agents.AI;
+using Microsoft.Agents.AI.Workflows;
+using Microsoft.Extensions.AI;
+using Azure.AI.DocumentIntelligence;
+
+
+public sealed class InterviewWorkflow
+{
+    private readonly EnvironmentConfig _config;
+    private readonly InterviewAgents _agents;
+
+    public InterviewWorkflow(EnvironmentConfig config, InterviewAgents agents)
+    {
+        _config = config;
+        _agents = agents;
+    }
+
+    public async Task RunAsync()
+    {
+        var jobDescriptionJson = string.Empty;
+
+        Console.WriteLine("Set the criteria for screening (Strong Match / Partial Match) : ");
+        var verdictCriteria = (Console.ReadLine() ?? "partial match").Trim();
+
+        var jdFilePath = Environment.GetEnvironmentVariable("JD_FILE_PATH");
+        if (!string.IsNullOrWhiteSpace(jdFilePath) && File.Exists(jdFilePath))
+        {
+            try
+            {
+                jobDescriptionJson = await DocumentExtractionService.ExtractJdJsonAsync(_config.DocIntelClient, _config.ChatClient, jdFilePath);
+                Console.WriteLine($"JD extracted from file: {jdFilePath}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"JD extraction failed: {ex.Message}. JD content will remain empty.");
+            }
+        }
+        else
+        {
+            Console.WriteLine("No JD file provided; set JD_FILE_PATH to a valid path to extract the job description.");
+        }
+
+        var resumeJson = string.Empty;
+
+        var resumeFilePath = Environment.GetEnvironmentVariable("RESUME_FILE_PATH");
+        if (!string.IsNullOrWhiteSpace(resumeFilePath) && File.Exists(resumeFilePath))
+        {
+            try
+            {
+                resumeJson = await DocumentExtractionService.ExtractResumeJsonAsync(_config.DocIntelClient, _config.ChatClient, resumeFilePath);
+                Console.WriteLine($"Resume extracted from file: {resumeFilePath}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Resume extraction failed: {ex.Message}. Resume content will remain empty.");
+            }
+        }
+        else
+        {
+            Console.WriteLine("No resume file provided; set RESUME_FILE_PATH to a valid path to extract the resume.");
+        }
+
+        var candidateName = ExtractCandidateName(resumeJson) 
+            ?? Environment.GetEnvironmentVariable("CANDIDATE_NAME") 
+            ?? "Candidate";
+
+        Console.WriteLine($"JD JSON: {jobDescriptionJson}");
+        Console.WriteLine($"Resume JSON: {resumeJson}");
+
+        var messages = new List<ChatMessage>
+        {
+          new(ChatRole.User, jobDescriptionJson),
+          new(ChatRole.User, resumeJson)
+        };
+
+        var screeningResult = await _agents.Screening.RunAsync(messages, thread: null, options: null, cancellationToken: default);
+
+        var lastMessage = screeningResult.Messages?.LastOrDefault();
+        string screeningText = lastMessage?.GetType().GetProperty("Text")?.GetValue(lastMessage) as string
+            ?? lastMessage?.ToString()
+            ?? screeningResult.ToString();
+
+        Console.WriteLine(screeningText);
+
+        var verdictLine = screeningText
+            .Split('\n')
+            .FirstOrDefault(l => l.TrimStart().StartsWith("Verdict", StringComparison.OrdinalIgnoreCase))
+            ?? screeningText;
+
+        var verdictStrong = verdictLine.Contains("Strong Match", StringComparison.OrdinalIgnoreCase);
+        var verdictPartial = verdictLine.Contains("Partial Match", StringComparison.OrdinalIgnoreCase);
+        var verdictNo = verdictLine.Contains("No Match", StringComparison.OrdinalIgnoreCase);
+
+        var passesCriteria = CriteriaAllowsStrong(verdictCriteria) ? verdictStrong : CriteriaAllowsPartialOrStrong(verdictCriteria) && (verdictStrong || verdictPartial);
+
+        if (verdictNo || !passesCriteria)
+        {
+            Console.WriteLine("Interview not started because the candidate did not pass screening per criteria.");
+            return;
+        }
+
+        var interviewThread = _agents.Interviewer.GetNewThread();
+
+        Console.WriteLine("Do you want to proceed with the interview? (yes/no)");
+        var proceedAnswer = Console.ReadLine();
+        if (proceedAnswer == "no" ){
+          return;
+        }
+
+        var interviewerMessages = new List<ChatMessage>
+        {
+          new(ChatRole.User, "Start the technical interview. Ask exactly one question at a time based on the JD and resume. Begin with a primary-skill question. The interview is adaptive (3-15 questions based on performance)."),
+          new(ChatRole.User, jobDescriptionJson),
+          new(ChatRole.User, resumeJson)
+        };
+
+        var interviewResult = await _agents.Interviewer.RunAsync(interviewerMessages, thread: interviewThread, options: null, cancellationToken: default);
+        var interviewLast = interviewResult.Messages?.LastOrDefault();
+        var interviewText = interviewLast?.GetType().GetProperty("Text")?.GetValue(interviewLast) as string
+            ?? interviewLast?.ToString()
+            ?? interviewResult.ToString();
+
+        Console.WriteLine(interviewText);
+        await TextToSpeech.SpeakAsync(interviewText);
+
+        var scores = new List<int>();
+        var englishScores = new List<double>();
+        var currentQuestion = interviewText;
+        var managerAssessment = string.Empty;
+        var exchangeHistory = new List<string>();
+        var nextQuestionIsFinal = false;
+        var endingAfterFinalAnswer = false;
+        var finalQuestionIssued = false;
+
+        while (true)
+        {
+          Console.WriteLine();
+          Console.Write("Candidate (speak or type): ");
+          var speechResult = await SpeechToText.ListenOnceAsync();
+          var answer = speechResult?.Text ?? Console.ReadLine();
+          if (speechResult?.PronunciationScore is { } score)
+          {
+              englishScores.Add(score);
+          }
+          if (string.IsNullOrWhiteSpace(answer))
+          {
+            Console.WriteLine("Interview ended by user.");
+            break;
+          }
+
+          var latestAnswerForManager = answer;
+
+          // Initial evaluation on the main answer
+          var evalText = await EvaluateAsync(jobDescriptionJson, resumeJson, currentQuestion, latestAnswerForManager);
+          var scoreValue = ExtractScore(evalText);
+
+          // If weak (<3.5) and not the final question, ask fixed follow-ups and re-evaluate including those answers
+          if (scoreValue >= 0 && scoreValue < 3.5 && !finalQuestionIssued)
+          {
+            var lowScoreFollowUps = await CollectLowScoreFollowUpsAsync(jobDescriptionJson, resumeJson, currentQuestion, latestAnswerForManager, interviewThread, englishScores);
+            if (lowScoreFollowUps is null)
+            {
+              Console.WriteLine("Interview ended by user during low-score follow-ups.");
+              break;
+            }
+
+            latestAnswerForManager = $"{latestAnswerForManager}\nFollow-up answers (evaluated together):\n{lowScoreFollowUps}";
+
+            evalText = await EvaluateAsync(jobDescriptionJson, resumeJson, currentQuestion, latestAnswerForManager);
+            scoreValue = ExtractScore(evalText);
+          }
+
+          if (scoreValue >= 0)
+          {
+            scores.Add(scoreValue);
+          }
+
+          Console.WriteLine(evalText);
+          Console.WriteLine();
+
+          exchangeHistory.Add($"Question {scores.Count}: {currentQuestion}\nAnswer: {latestAnswerForManager}\nEvaluation: {evalText}");
+
+          if (endingAfterFinalAnswer)
+          {
+            Console.WriteLine("Interview completed after final question.");
+            break;
+          }
+
+          var managerMessages = new List<ChatMessage>
+          {
+            new(ChatRole.User, jobDescriptionJson),
+            new(ChatRole.User, resumeJson),
+            new(ChatRole.User, $"Latest Question: {currentQuestion}"),
+            new(ChatRole.User, $"Latest Answer: {latestAnswerForManager}"),
+            new(ChatRole.User, $"Evaluation: {evalText}"),
+            new(ChatRole.User, $"Scores so far: {string.Join(", ", scores)}"),
+            new(ChatRole.User, $"Questions asked: {scores.Count}"),
+            new(ChatRole.User, $"Interview history so far:\n{string.Join("\n---\n", exchangeHistory)}")
+          };
+
+          var managerResult = await _agents.Manager.RunAsync(managerMessages, thread: null, options: null, cancellationToken: default);
+          var managerLast = managerResult.Messages?.LastOrDefault();
+          var managerText = managerLast?.GetType().GetProperty("Text")?.GetValue(managerLast) as string
+              ?? managerLast?.ToString()
+              ?? managerResult.ToString();
+
+          managerAssessment = managerText;
+
+          var decisionMatch = Regex.Match(managerText ?? string.Empty, @"Decision:\s*(?<decision>\w+)", RegexOptions.IgnoreCase);
+          var decision = decisionMatch.Success ? decisionMatch.Groups["decision"].Value.ToLowerInvariant() : "continue";
+
+          var recentScores = scores.Skip(Math.Max(0, scores.Count - 3)).ToList();
+          var recentLowCount = recentScores.Count(s => s <= 2);
+          var recentAverage = recentScores.Count > 0 ? recentScores.Average() : 0;
+          var allowTerminate = scores.Count >= 3 && (recentLowCount >= 2 || recentAverage < 2.5);
+
+          if (decision is "terminate" && !allowTerminate)
+          {
+            decision = "continue";
+          }
+
+          var managerIndicatesFinal = managerText.Contains("final question", StringComparison.OrdinalIgnoreCase)
+              || managerText.Contains("last question", StringComparison.OrdinalIgnoreCase);
+
+          if (!finalQuestionIssued && (decision is "terminate" or "complete" || managerIndicatesFinal))
+          {
+            finalQuestionIssued = true;
+            endingAfterFinalAnswer = true;
+
+            var finalPrompt = "Ask one final question now, and casually mention it's the last question (e.g., 'Before we wrap, one last question: ...'). Do not include any other closing or thank-you statements; output only the final question.";
+            var followUpMessagesFinal = new List<ChatMessage>
+            {
+              new(ChatRole.User, finalPrompt)
+            };
+            var followUpResultFinal = await _agents.Interviewer.RunAsync(followUpMessagesFinal, thread: interviewThread, options: null, cancellationToken: default);
+            var followUpLastFinal = followUpResultFinal.Messages?.LastOrDefault();
+            var followUpTextFinal = followUpLastFinal?.GetType().GetProperty("Text")?.GetValue(followUpLastFinal) as string
+                ?? followUpLastFinal?.ToString()
+                ?? followUpResultFinal.ToString();
+
+            Console.WriteLine(followUpTextFinal);
+            await TextToSpeech.SpeakAsync(followUpTextFinal);
+            currentQuestion = followUpTextFinal;
+            continue;
+          }
+
+          if (decision is "terminate" or "complete")
+          {
+            endingAfterFinalAnswer = true;
+            continue;
+          }
+
+          var followUpMessages = new List<ChatMessage>
+          {
+            new(ChatRole.User, answer)
+          };
+
+          var followUpResult = await _agents.Interviewer.RunAsync(followUpMessages, thread: interviewThread, options: null, cancellationToken: default);
+          var followUpLast = followUpResult.Messages?.LastOrDefault();
+          var followUpText = followUpLast?.GetType().GetProperty("Text")?.GetValue(followUpLast) as string
+              ?? followUpLast?.ToString()
+              ?? followUpResult.ToString();
+
+          Console.WriteLine(followUpText);
+          await TextToSpeech.SpeakAsync(followUpText);
+          currentQuestion = followUpText;
+        }
+
+        if (scores.Count > 0)
+        {
+          var average = scores.Average();
+          Console.WriteLine($"\nAverage Score: {average:F2} / 5 across {scores.Count} questions.");
+            var finalVerdict = new List<ChatMessage>
+            {
+            new(ChatRole.User, $"Average Score: {average:F2} / 5"),
+            new(ChatRole.User, $"Scores: {string.Join(", ", scores)}; Total questions: {scores.Count}"),
+            new(ChatRole.User, $"Interview history:\n{string.Join("\n---\n", exchangeHistory)}"),
+            new(ChatRole.User, "Based on the interview performance and scores, provide a final recommendation on whether to proceed with the candidate or not. Consider the average score, consistency, and overall fit to the job description.")
+            };
+            var finalResult = await _agents.Manager.RunAsync(finalVerdict, thread: null, options: null, cancellationToken: default);
+            var finalLast = finalResult.Messages?.LastOrDefault();
+            var finalText = finalLast?.GetType().GetProperty("Text")?.GetValue(finalLast) as string
+                ?? finalLast?.ToString()
+                ?? finalResult.ToString();
+            Console.WriteLine(finalText);
+
+            var outputPath = Environment.GetEnvironmentVariable("REPORT_OUTPUT_PATH") ?? "InterviewReport.pdf";
+            var englishScore = englishScores.Count > 0 ? englishScores.Average() : (double?)null;
+            await ConvoSumm.GenerateAsync(_config, exchangeHistory, scores, finalText, candidateName, outputPath, englishScore);
+        }
+        else
+        {
+          Console.WriteLine("No scores recorded; interview incomplete.");
+        }
+    }
+
+    private static string? ExtractCandidateName(string resumeJson)
+    {
+        if (string.IsNullOrWhiteSpace(resumeJson))
+            return null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(resumeJson);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                return null;
+
+            foreach (var prop in doc.RootElement.EnumerateObject())
+            {
+                if (string.Equals(prop.Name, "name", StringComparison.OrdinalIgnoreCase) && prop.Value.ValueKind == JsonValueKind.String)
+                {
+                    var name = prop.Value.GetString();
+                    return string.IsNullOrWhiteSpace(name) ? null : name;
+                }
+            }
+        }
+        catch
+        {
+            return null;
+        }
+
+        return null;
+    }
+
+    private async Task<string?> CollectLowScoreFollowUpsAsync(
+        string jobDescriptionJson,
+        string resumeJson,
+        string currentQuestion,
+        string scoredAnswer,
+        AgentThread interviewThread,
+        List<double> englishScores)
+    {
+        var segments = new List<string>();
+        const int followUpsToAsk = 3; // fixed small set for weak answers
+
+        for (var i = 0; i < followUpsToAsk; i++)
+        {
+            var followUpMessages = new List<ChatMessage>
+            {
+                new(ChatRole.User, jobDescriptionJson),
+                new(ChatRole.User, resumeJson),
+                new(ChatRole.User, $"Original Question: {currentQuestion}"),
+                new(ChatRole.User, $"Candidate's scored answer (score < 3.5): {scoredAnswer}"),
+                new(ChatRole.User, "Ask one concise follow-up question to clarify or deepen understanding of the same topic. Keep it short, targeted, and do not evaluate.")
+            };
+
+            var followUpResult = await _agents.Interviewer.RunAsync(followUpMessages, thread: interviewThread, options: null, cancellationToken: default);
+            var followUpLast = followUpResult.Messages?.LastOrDefault();
+            var followUpQuestion = followUpLast?.GetType().GetProperty("Text")?.GetValue(followUpLast) as string
+                ?? followUpLast?.ToString()
+                ?? followUpResult.ToString();
+
+            Console.WriteLine(followUpQuestion);
+            await TextToSpeech.SpeakAsync(followUpQuestion);
+            Console.Write("Candidate (follow-up, speak or type): ");
+            var followUpSpeech = await SpeechToText.ListenOnceAsync();
+            var followUpAnswer = followUpSpeech?.Text ?? Console.ReadLine();
+            if (followUpSpeech?.PronunciationScore is { } followUpScore)
+            {
+                englishScores.Add(followUpScore);
+            }
+            if (string.IsNullOrWhiteSpace(followUpAnswer))
+            {
+                return null;
+            }
+
+            segments.Add($"Follow-up {i + 1}: {followUpQuestion}\nAnswer: {followUpAnswer}");
+        }
+
+        return string.Join("\n", segments);
+    }
+
+    private static bool CriteriaAllowsStrong(string verdictCriteria) => verdictCriteria.Equals("strong match", StringComparison.OrdinalIgnoreCase);
+
+    private static bool CriteriaAllowsPartialOrStrong(string verdictCriteria) => verdictCriteria.Equals("partial match", StringComparison.OrdinalIgnoreCase) || CriteriaAllowsStrong(verdictCriteria);
+
+    private async Task<string> EvaluateAsync(
+        string jobDescriptionJson,
+        string resumeJson,
+        string currentQuestion,
+        string aggregatedAnswer)
+    {
+        var evalMessages = new List<ChatMessage>
+        {
+            new(ChatRole.User, jobDescriptionJson),
+            new(ChatRole.User, resumeJson),
+            new(ChatRole.User, $"Question: {currentQuestion}"),
+            new(ChatRole.User, $"Answer: {aggregatedAnswer}")
+        };
+
+        var evalResult = await _agents.Evaluator.RunAsync(evalMessages, thread: null, options: null, cancellationToken: default);
+        var evalLast = evalResult.Messages?.LastOrDefault();
+        var evalText = evalLast?.GetType().GetProperty("Text")?.GetValue(evalLast) as string
+            ?? evalLast?.ToString()
+            ?? evalResult.ToString();
+
+        return evalText ?? string.Empty;
+    }
+
+    private static int ExtractScore(string evalText)
+    {
+        var match = Regex.Match(evalText ?? string.Empty, @"Score:\s*(?<score>[0-5])");
+        return match.Success && int.TryParse(match.Groups["score"].Value, out var scoreValue)
+            ? scoreValue
+            : -1;
+    }
+}

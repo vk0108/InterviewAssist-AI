@@ -1,0 +1,218 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\InterviewAssist Agentic AI\\Agents\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{2766B620-A9F6-C45E-3D60-FB08CECFDAB2}|Agents.csproj|c:\\interviewassist agentic ai\\agents\\agentfactory.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2766B620-A9F6-C45E-3D60-FB08CECFDAB2}|Agents.csproj|solutionrelative:agentfactory.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2766B620-A9F6-C45E-3D60-FB08CECFDAB2}|Agents.csproj|c:\\interviewassist agentic ai\\agents\\interviewworkflow.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2766B620-A9F6-C45E-3D60-FB08CECFDAB2}|Agents.csproj|solutionrelative:interviewworkflow.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2766B620-A9F6-C45E-3D60-FB08CECFDAB2}|Agents.csproj|c:\\interviewassist agentic ai\\agents\\.env||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{2766B620-A9F6-C45E-3D60-FB08CECFDAB2}|Agents.csproj|solutionrelative:.env||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2766B620-A9F6-C45E-3D60-FB08CECFDAB2}|Agents.csproj|c:\\interviewassist agentic ai\\agents\\convosumm.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2766B620-A9F6-C45E-3D60-FB08CECFDAB2}|Agents.csproj|solutionrelative:convosumm.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2766B620-A9F6-C45E-3D60-FB08CECFDAB2}|Agents.csproj|c:\\interviewassist agentic ai\\agents\\documentextractionservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2766B620-A9F6-C45E-3D60-FB08CECFDAB2}|Agents.csproj|solutionrelative:documentextractionservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2766B620-A9F6-C45E-3D60-FB08CECFDAB2}|Agents.csproj|c:\\interviewassist agentic ai\\agents\\speechtotext.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2766B620-A9F6-C45E-3D60-FB08CECFDAB2}|Agents.csproj|solutionrelative:speechtotext.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2766B620-A9F6-C45E-3D60-FB08CECFDAB2}|Agents.csproj|c:\\interviewassist agentic ai\\agents\\environmentconfig.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2766B620-A9F6-C45E-3D60-FB08CECFDAB2}|Agents.csproj|solutionrelative:environmentconfig.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2766B620-A9F6-C45E-3D60-FB08CECFDAB2}|Agents.csproj|c:\\interviewassist agentic ai\\agents\\texttospeech.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2766B620-A9F6-C45E-3D60-FB08CECFDAB2}|Agents.csproj|solutionrelative:texttospeech.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2766B620-A9F6-C45E-3D60-FB08CECFDAB2}|Agents.csproj|c:\\interviewassist agentic ai\\agents\\reportgeneration.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2766B620-A9F6-C45E-3D60-FB08CECFDAB2}|Agents.csproj|solutionrelative:reportgeneration.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2766B620-A9F6-C45E-3D60-FB08CECFDAB2}|Agents.csproj|c:\\interviewassist agentic ai\\agents\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2766B620-A9F6-C45E-3D60-FB08CECFDAB2}|Agents.csproj|solutionrelative:program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2766B620-A9F6-C45E-3D60-FB08CECFDAB2}|Agents.csproj|c:\\interviewassist agentic ai\\agents\\agents.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}",
+      "RelativeMoniker": "D:0:0:{2766B620-A9F6-C45E-3D60-FB08CECFDAB2}|Agents.csproj|solutionrelative:agents.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2766B620-A9F6-C45E-3D60-FB08CECFDAB2}|Agents.csproj|c:\\interviewassist agentic ai\\agents\\agents.csproj||{04B8AB82-A572-4FEF-95CE-5222444B6B64}|",
+      "RelativeMoniker": "D:0:0:{2766B620-A9F6-C45E-3D60-FB08CECFDAB2}|Agents.csproj|solutionrelative:agents.csproj||{04B8AB82-A572-4FEF-95CE-5222444B6B64}|"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 10,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": ".env",
+              "DocumentMoniker": "C:\\InterviewAssist Agentic AI\\Agents\\.env",
+              "RelativeDocumentMoniker": ".env",
+              "ToolTip": "C:\\InterviewAssist Agentic AI\\Agents\\.env",
+              "RelativeToolTip": ".env",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAA0AAAA2AAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
+              "WhenOpened": "2026-01-13T05:03:49.413Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "SpeechToText.cs",
+              "DocumentMoniker": "C:\\InterviewAssist Agentic AI\\Agents\\SpeechToText.cs",
+              "RelativeDocumentMoniker": "SpeechToText.cs",
+              "ToolTip": "C:\\InterviewAssist Agentic AI\\Agents\\SpeechToText.cs",
+              "RelativeToolTip": "SpeechToText.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAACAAAAAjAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-20T09:06:13.786Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 7,
+              "Title": "TextToSpeech.cs",
+              "DocumentMoniker": "C:\\InterviewAssist Agentic AI\\Agents\\TextToSpeech.cs",
+              "RelativeDocumentMoniker": "TextToSpeech.cs",
+              "ToolTip": "C:\\InterviewAssist Agentic AI\\Agents\\TextToSpeech.cs",
+              "RelativeToolTip": "TextToSpeech.cs",
+              "ViewState": "AgIAAAYAAAAAAAAAAAAAABEAAAB0AAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-19T09:41:25.938Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 8,
+              "Title": "ReportGeneration.cs",
+              "DocumentMoniker": "C:\\InterviewAssist Agentic AI\\Agents\\ReportGeneration.cs",
+              "RelativeDocumentMoniker": "ReportGeneration.cs",
+              "ToolTip": "C:\\InterviewAssist Agentic AI\\Agents\\ReportGeneration.cs",
+              "RelativeToolTip": "ReportGeneration.cs",
+              "ViewState": "AgIAAAMAAAAAAAAAAAAAACQAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-19T04:45:55.951Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 11,
+              "Title": "Agents",
+              "DocumentMoniker": "C:\\InterviewAssist Agentic AI\\Agents\\Agents.csproj",
+              "RelativeDocumentMoniker": "Agents.csproj",
+              "ToolTip": "C:\\InterviewAssist Agentic AI\\Agents\\Agents.csproj",
+              "RelativeToolTip": "Agents.csproj",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2026-02-18T04:59:49.985Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "ConvoSumm.cs",
+              "DocumentMoniker": "C:\\InterviewAssist Agentic AI\\Agents\\ConvoSumm.cs",
+              "RelativeDocumentMoniker": "ConvoSumm.cs",
+              "ToolTip": "C:\\InterviewAssist Agentic AI\\Agents\\ConvoSumm.cs",
+              "RelativeToolTip": "ConvoSumm.cs",
+              "ViewState": "AgIAAKAAAAAAAAAAAAAUwKcAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-13T07:01:18.341Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 6,
+              "Title": "EnvironmentConfig.cs",
+              "DocumentMoniker": "C:\\InterviewAssist Agentic AI\\Agents\\EnvironmentConfig.cs",
+              "RelativeDocumentMoniker": "EnvironmentConfig.cs",
+              "ToolTip": "C:\\InterviewAssist Agentic AI\\Agents\\EnvironmentConfig.cs",
+              "RelativeToolTip": "EnvironmentConfig.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAADQAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-01-20T09:58:27.707Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "InterviewWorkflow.cs",
+              "DocumentMoniker": "C:\\InterviewAssist Agentic AI\\Agents\\InterviewWorkflow.cs",
+              "RelativeDocumentMoniker": "InterviewWorkflow.cs",
+              "ToolTip": "C:\\InterviewAssist Agentic AI\\Agents\\InterviewWorkflow.cs",
+              "RelativeToolTip": "InterviewWorkflow.cs",
+              "ViewState": "AgIAAGkAAAAAAAAAAAAkwHoAAABMAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-01-20T10:09:16.508Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 10,
+              "Title": "Agents.csproj",
+              "DocumentMoniker": "C:\\InterviewAssist Agentic AI\\Agents\\Agents.csproj",
+              "RelativeDocumentMoniker": "Agents.csproj",
+              "ToolTip": "C:\\InterviewAssist Agentic AI\\Agents\\Agents.csproj",
+              "RelativeToolTip": "Agents.csproj",
+              "ViewState": "AgIAAC4AAAAAAAAAAABBwAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2026-01-13T07:14:42.957Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "DocumentExtractionService.cs",
+              "DocumentMoniker": "C:\\InterviewAssist Agentic AI\\Agents\\DocumentExtractionService.cs",
+              "RelativeDocumentMoniker": "DocumentExtractionService.cs",
+              "ToolTip": "C:\\InterviewAssist Agentic AI\\Agents\\DocumentExtractionService.cs",
+              "RelativeToolTip": "DocumentExtractionService.cs",
+              "ViewState": "AgIAADkAAAAAAAAAAAAYwEEAAAAZAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-01-20T10:01:15.187Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "AgentFactory.cs",
+              "DocumentMoniker": "C:\\InterviewAssist Agentic AI\\Agents\\AgentFactory.cs",
+              "RelativeDocumentMoniker": "AgentFactory.cs",
+              "ToolTip": "C:\\InterviewAssist Agentic AI\\Agents\\AgentFactory.cs",
+              "RelativeToolTip": "AgentFactory.cs",
+              "ViewState": "AgIAAA0AAAAAAAAAAAAQwGUAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-01-20T09:59:22.628Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 9,
+              "Title": "Program.cs",
+              "DocumentMoniker": "C:\\InterviewAssist Agentic AI\\Agents\\Program.cs",
+              "RelativeDocumentMoniker": "Program.cs",
+              "ToolTip": "C:\\InterviewAssist Agentic AI\\Agents\\Program.cs",
+              "RelativeToolTip": "Program.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAkAAAAFAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-01-13T05:52:58.561Z"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{cce594b6-0c39-4442-ba28-10c64ac7e89f}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+﻿public partial class Program
+{
+    public static async Task Main()
+    {
+        Console.WriteLine("Starting interview workflow...");
+        try
+        {
+            var config = EnvironmentConfig.Build();
+            Console.WriteLine("Environment config loaded.");
+            var agents = AgentFactory.Create(config.ChatClient);
+            Console.WriteLine("Agents created.");
+            var workflow = new InterviewWorkflow(config, agents);
+            await workflow.RunAsync();
+            Console.WriteLine("Workflow completed.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Fatal error: {ex.Message}\n{ex}");
+        }
+    }
+}
