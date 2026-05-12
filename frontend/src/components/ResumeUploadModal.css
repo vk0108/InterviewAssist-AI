@@ -1,0 +1,132 @@
+:root {
+  --resume-modal-radius: 20px;
+}
+
+.ResumeModal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 16, 40, 0.45);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  z-index: 999;
+  animation: resume-modal-fade 0.2s ease-out;
+}
+
+.ResumeModal {
+  width: min(520px, 92vw);
+  background: rgba(255, 255, 255, 0.98);
+  border-radius: var(--resume-modal-radius);
+  border: 1px solid rgba(26, 77, 243, 0.2);
+  box-shadow: 0 24px 60px rgba(8, 25, 90, 0.18);
+  padding: 24px;
+  display: grid;
+  gap: 18px;
+  animation: resume-modal-rise 0.3s ease-out;
+}
+
+.ResumeModal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ResumeModal-title {
+  margin: 0;
+  font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+  font-size: 20px;
+  font-weight: 600;
+  color: #0b1433;
+}
+
+.ResumeModal-subtitle {
+  margin: 6px 0 0;
+  color: #51608f;
+  font-size: 13.5px;
+}
+
+.ResumeModal-close {
+  border: 1px solid rgba(26, 77, 243, 0.2);
+  background: rgba(243, 246, 255, 1);
+  color: #0b1433;
+  border-radius: 999px;
+  font-size: 12px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.ResumeModal-dropzone {
+  border: 1px dashed rgba(26, 77, 243, 0.4);
+  background: rgba(243, 246, 255, 0.9);
+  border-radius: 16px;
+  padding: 26px 20px;
+  text-align: center;
+  display: grid;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.ResumeModal-input {
+  display: none;
+}
+
+.ResumeModal-dropzoneText {
+  font-weight: 600;
+  color: #0b1433;
+}
+
+.ResumeModal-hint {
+  font-size: 12.5px;
+  color: #51608f;
+}
+
+.ResumeModal-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.ResumeModal-upload {
+  border: none;
+  background: linear-gradient(135deg, rgba(26, 77, 243, 1), rgba(18, 60, 199, 1));
+  color: #ffffff;
+  padding: 12px 28px;
+  border-radius: 14px;
+  font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 14px 24px rgba(26, 77, 243, 0.28);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ResumeModal-upload:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 18px 28px rgba(26, 77, 243, 0.3);
+}
+
+.ResumeModal-upload:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  box-shadow: none;
+}
+
+@keyframes resume-modal-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes resume-modal-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}

@@ -1,0 +1,189 @@
+.Report {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 48px 56px;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  color: #1a1a2e;
+  background: #fff;
+  min-height: 100vh;
+}
+
+.Report-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  border-bottom: 3px solid #1a3a6b;
+  padding-bottom: 16px;
+  margin-bottom: 32px;
+}
+
+.Report-headerLeft h1 {
+  margin: 0 0 4px;
+  font-size: 1.7rem;
+  color: #1a3a6b;
+  font-weight: 700;
+}
+
+.Report-headerLeft p {
+  margin: 0;
+  font-size: 1.15rem;
+  color: #555;
+}
+
+.Report-headerRight {
+  text-align: right;
+  font-size: 0.85rem;
+  color: #888;
+}
+
+.Report-download {
+  margin-top: 12px;
+  padding: 10px 22px;
+  background: #1a3a6b;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.Report-download:hover {
+  background: #14305a;
+}
+
+.Report-section {
+  margin-bottom: 28px;
+}
+
+.Report-sectionTitle {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #1a3a6b;
+  border-bottom: 1px solid #1a3a6b;
+  padding-bottom: 6px;
+  margin-bottom: 12px;
+}
+
+.Report-recap {
+  font-size: 1rem;
+  line-height: 1.7;
+  color: #333;
+}
+
+/* Score overview box */
+.Report-scoreBox {
+  background: #f0f2f5;
+  border-radius: 8px;
+  padding: 20px 24px;
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  margin-bottom: 8px;
+}
+
+.Report-scoreBig {
+  font-size: 2rem;
+  font-weight: 800;
+  color: #1a3a6b;
+}
+
+.Report-scoreMeta {
+  font-size: 0.95rem;
+  color: #555;
+}
+
+.Report-scoreBar {
+  flex: 1;
+  height: 16px;
+  background: #ddd;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.Report-scoreBarFill {
+  height: 100%;
+  border-radius: 8px;
+  transition: width 0.6s ease;
+}
+
+/* Rating tables */
+.Report-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.Report-table th,
+.Report-table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid #e8e8e8;
+  font-size: 0.95rem;
+}
+
+.Report-table th {
+  font-weight: 600;
+  color: #555;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.Report-ratingBadge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #fff;
+  min-width: 44px;
+  text-align: center;
+}
+
+/* Discussion topics */
+.Report-topic {
+  margin-bottom: 16px;
+}
+
+.Report-topicTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1a3a6b;
+  margin-bottom: 4px;
+}
+
+.Report-topicSummary {
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: #444;
+  padding-left: 12px;
+}
+
+/* Interviewer comments */
+.Report-comments {
+  background: #e8eef7;
+  border-radius: 8px;
+  padding: 16px 20px;
+  font-size: 1rem;
+  line-height: 1.65;
+  color: #333;
+}
+
+/* Back button */
+.Report-back {
+  margin-top: 32px;
+  padding: 10px 22px;
+  background: transparent;
+  color: #1a3a6b;
+  border: 2px solid #1a3a6b;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.Report-back:hover {
+  background: #f0f2f5;
+}

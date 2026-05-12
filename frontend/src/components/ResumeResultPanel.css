@@ -1,0 +1,82 @@
+.ResumePanel {
+  text-align: left;
+}
+
+.ResumePanel-header {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.ResumePanel-eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+  font-weight: 600;
+  color: #51608f;
+}
+
+.ResumePanel-title {
+  margin: 0;
+  font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+  font-size: 20px;
+  font-weight: 600;
+  color: #0b1433;
+}
+
+.ResumePanel-list {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.ResumePanel-item {
+  display: grid;
+  gap: 6px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(26, 77, 243, 0.12);
+}
+
+.ResumePanel-item:last-child {
+  border-bottom: none;
+}
+
+.ResumePanel-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #51608f;
+}
+
+.ResumePanel-value {
+  font-size: 15px;
+  font-weight: 600;
+  color: #0b1433;
+}
+
+.ResumePanel-section {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.ResumePanel-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.ResumePanel-tag {
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: rgba(26, 77, 243, 0.14);
+  color: #0b1433;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.ResumePanel-empty {
+  font-size: 13.5px;
+  color: #51608f;
+}
