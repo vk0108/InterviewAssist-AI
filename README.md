@@ -80,31 +80,7 @@ git clone https://github.com/your-username/InterviewAssist-Agentic-AI.git
 cd "InterviewAssist-Agentic-AI"
 ```
 
-### 2. Configure backend environment variables
-
-Create `Agents/.env` from the template below (never commit this file):
-
-```env
-AZURE_OPENAI_ENDPOINT=https://<your-resource>.openai.azure.com/
-AZURE_OPENAI_DEPLOYMENT_NAME=gpt-4o-mini
-
-DOCINTEL_ENDPOINT=https://<your-resource>.cognitiveservices.azure.com/
-DOCINTEL_KEY=<your-document-intelligence-key>
-
-SPEECH_KEY=<your-speech-service-key>
-SPEECH_REGION=eastus
-TEXT_TO_SPEECH_ENDPOINT=https://eastus.tts.speech.microsoft.com
-SPEECH_TO_TEXT=https://eastus.stt.speech.microsoft.com
-
-AZURE_AI_LANGUAGE_ENDPOINT=https://<your-resource>.cognitiveservices.azure.com/
-AZURE_AI_LANGUAGE_KEY=<your-language-key>
-
-REPORT_OUTPUT_PATH=C:\path\to\output\InterviewReport.pdf
-RESUME_FILE_PATH=C:\path\to\default\resume.pdf
-SPEECH_OUTPUT_WAV=C:\path\to\output\interview_audio.wav
-```
-
-### 3. Install and run the backend
+### 2. Install and run the backend
 
 ```bash
 cd Agents
@@ -113,7 +89,7 @@ dotnet run
 # Backend runs on http://localhost:5000
 ```
 
-### 4. Install and run the frontend
+### 3. Install and run the frontend
 
 ```bash
 cd frontend
