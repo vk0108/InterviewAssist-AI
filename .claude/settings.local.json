@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(printf 'using Microsoft.Agents.AI.Workflows;\\\\nusing Microsoft.Extensions.AI;\\\\nusing System.Collections.Generic;\\\\npublic class TypeTest { public static void Test\\(ChatClientAgent agent\\) { int x = agent.RunAsync\\(new List<ChatMessage>\\(\\), null, null, default\\); } }')",
-      "Bash(dotnet build:*)",
-      "Bash(rm -f Agents/_test_type.cs)"
-    ]
-  }
-}
