@@ -188,3 +188,4 @@ C:\InterviewAssist Agentic AI\Agents\obj\Debug\net9.0\staticwebassets.build.json
 C:\InterviewAssist Agentic AI\Agents\obj\Debug\net9.0\staticwebassets.build.json.cache
 C:\InterviewAssist Agentic AI\Agents\obj\Debug\net9.0\staticwebassets.development.json
 C:\InterviewAssist Agentic AI\Agents\obj\Debug\net9.0\staticwebassets.build.endpoints.json
+C:\InterviewAssist Agentic AI\Agents\obj\Debug\net9.0\Agents.sourcelink.json

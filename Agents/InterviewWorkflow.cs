@@ -373,7 +373,7 @@ public sealed class InterviewWorkflow
         {
             session.CollectedFollowUpAnswers.Add(answer);
 
-            // Evaluate this follow-up answer individually
+            // Evaluate this follow-up answer immediately
             var followUpIdx = session.CollectedFollowUpAnswers.Count - 1;
             var followUpQ = session.PendingFollowUpQuestions[followUpIdx];
             var followUpEvalText = await EvaluateAsync(session.JobDescriptionJson, session.ResumeJson, followUpQ, answer, agents);
@@ -381,20 +381,32 @@ public sealed class InterviewWorkflow
             if (followUpScoreVal >= 0)
                 session.PendingFollowUpScores.Add(followUpScoreVal);
 
-            var remaining = session.PendingFollowUpQuestions.Count - session.CollectedFollowUpAnswers.Count;
+            // Recovery check: if the candidate scored >=3.5 on this follow-up, skip remaining
+            // and continue to the next main question. Otherwise, if we haven't hit the 3-follow-up
+            // limit, generate the next follow-up on-demand.
+            var recovered = followUpScoreVal >= 0 && followUpScoreVal >= 3.5;
+            var asked = session.CollectedFollowUpAnswers.Count;
+            var canAskMore = asked < FollowUpsToAsk;
 
-            if (remaining > 0)
+            if (!recovered && canAskMore)
             {
-                var next = session.PendingFollowUpQuestions[session.CollectedFollowUpAnswers.Count];
-                session.CurrentQuestion = next;
-                var nextAudio = await TextToSpeech.SynthesizeToBase64Async(next);
+                var nextFollow = await AskSingleFollowUpQuestionAsync(
+                    agents,
+                    session.InterviewThread,
+                    session.JobDescriptionJson,
+                    session.ResumeJson,
+                    session.PendingScoredQuestion ?? session.CurrentQuestion,
+                    session.PendingWeakAnswer ?? answer);
+                session.PendingFollowUpQuestions.Add(nextFollow);
+                session.CurrentQuestion = nextFollow;
+                var nextAudio = await TextToSpeech.SynthesizeToBase64Async(nextFollow);
 
                 return new InteractiveAnswerResponse(
                     session.SessionId,
                     "Next follow-up question.",
                     followUpEvalText,
                     null,
-                    next,
+                    nextFollow,
                     true,
                     session.PendingFollowUpQuestions,
                     false,
@@ -404,7 +416,8 @@ public sealed class InterviewWorkflow
                     nextAudio);
             }
 
-            // All follow-ups done — average follow-up scores as the new score for this main question
+            // Recovered or hit the 3-follow-up limit — average collected follow-up scores
+            // as the new score for this main question and move on.
             var segments = session.PendingFollowUpQuestions.Select((q, i) => $"Follow-up {i + 1}: {q}\nAnswer: {session.CollectedFollowUpAnswers[i]}");
             var aggregated = $"{session.PendingWeakAnswer}\nFollow-up answers:\n{string.Join("\n", segments)}";
 
@@ -433,12 +446,19 @@ public sealed class InterviewWorkflow
             scoreValue = ExtractScore(evalText);
         }
 
-        // Trigger follow-ups for weak answers — score is deferred until follow-ups complete.
-        // The averaged follow-up score will be added as the main question's score.
+        // Trigger follow-ups for weak answers — generate only the first one; subsequent
+        // follow-ups are produced on-demand based on whether the candidate recovers.
         if (scoreValue >= 0 && scoreValue < 3.5 && !session.FinalQuestionIssued && !session.AwaitingFollowUps && !followUpJustCompleted)
         {
-            var followUps = await GenerateLowScoreFollowUpsAsync(session.JobDescriptionJson, session.ResumeJson, session.CurrentQuestion, answer, session.InterviewThread, agents);
-            session.PendingFollowUpQuestions = followUps.ToList();
+            var firstFollow = await AskSingleFollowUpQuestionAsync(
+                agents,
+                session.InterviewThread,
+                session.JobDescriptionJson,
+                session.ResumeJson,
+                session.CurrentQuestion,
+                answer);
+
+            session.PendingFollowUpQuestions = new List<string> { firstFollow };
             session.CollectedFollowUpAnswers.Clear();
             session.PendingWeakAnswer = answer;
             session.PendingScoredQuestion = session.CurrentQuestion;
@@ -448,7 +468,6 @@ public sealed class InterviewWorkflow
             session.FollowUpTriggerCount++;
             session.AwaitingFollowUps = true;
 
-            var firstFollow = session.PendingFollowUpQuestions.First();
             session.CurrentQuestion = firstFollow;
             var firstFollowAudio = await TextToSpeech.SynthesizeToBase64Async(firstFollow);
 
@@ -668,22 +687,6 @@ public sealed class InterviewWorkflow
 
         var followUpResult = await agents.Interviewer.RunAsync(followUpMessages, thread: interviewThread, options: null, cancellationToken: default);
         return ExtractResponseText(followUpResult);
-    }
-
-    private async Task<IReadOnlyList<string>> GenerateLowScoreFollowUpsAsync(
-        string jobDescriptionJson,
-        string resumeJson,
-        string currentQuestion,
-        string scoredAnswer,
-        AgentThread interviewThread,
-        InterviewAgents agents)
-    {
-        var followUps = new List<string>();
-        for (var i = 0; i < FollowUpsToAsk; i++)
-        {
-            followUps.Add(await AskSingleFollowUpQuestionAsync(agents, interviewThread, jobDescriptionJson, resumeJson, currentQuestion, scoredAnswer));
-        }
-        return followUps;
     }
 
     #endregion
@@ -922,13 +925,19 @@ public sealed class InterviewWorkflow
                 return (null, followUpScores);
             }
 
-            // Evaluate each follow-up answer individually
+            // Evaluate each follow-up answer immediately
             var evalText = await EvaluateAsync(jobDescriptionJson, resumeJson, followUpQuestion ?? string.Empty, followUpAnswer);
             var scoreVal = ExtractScore(evalText);
             if (scoreVal >= 0)
                 followUpScores.Add(scoreVal);
 
             segments.Add($"Follow-up {i + 1}: {followUpQuestion}\nAnswer: {followUpAnswer}\nEvaluation: {evalText}");
+
+            // Early exit on recovery: if this follow-up was answered well (>=3.5), skip the rest.
+            if (scoreVal >= 3.5)
+            {
+                break;
+            }
         }
 
         return (string.Join("\n", segments), followUpScores);
